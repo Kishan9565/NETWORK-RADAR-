@@ -1,0 +1,33 @@
+package com.networkradar.feature.heatmap.presentation
+
+import com.networkradar.core.domain.indoor.IndoorMap
+import com.networkradar.feature.heatmap.domain.HeatmapCell
+import com.networkradar.feature.heatmap.domain.HeatmapEngine
+import com.networkradar.feature.heatmap.domain.HeatmapMetric
+
+data class HeatmapState(
+    val activeMap: IndoorMap? = null,
+    val heatmapCells: List<HeatmapCell> = emptyList(),
+    val sourcePoints: List<HeatmapEngine.WeightedPoint> = emptyList(),
+    val selectedMetric: HeatmapMetric = HeatmapMetric.DOWNLOAD,
+    val selectedSessionId: String? = null,
+    val isLoading: Boolean = false,
+    val error: String? = null,
+    val metricRange: MetricRange? = null
+)
+
+data class MetricRange(
+    val min: Double,
+    val max: Double,
+    val isFixed: Boolean
+)
+
+sealed interface HeatmapAction {
+    data class SelectMetric(val metric: HeatmapMetric) : HeatmapAction
+    data class LoadSession(val sessionId: String) : HeatmapAction
+    data object Refresh : HeatmapAction
+}
+
+sealed interface HeatmapEvent {
+    data class Error(val message: String) : HeatmapEvent
+}

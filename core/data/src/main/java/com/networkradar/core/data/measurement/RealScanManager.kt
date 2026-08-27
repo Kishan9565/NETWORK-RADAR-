@@ -10,6 +10,8 @@ import com.networkradar.core.domain.util.Result
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 
 class RealScanManager(
@@ -17,10 +19,15 @@ class RealScanManager(
     private val measurementDataSource: NetworkMeasurementPointLocalDataSource
 ) : ScanManager {
 
+    private val mutex = Mutex()
     private val _activeSession = MutableStateFlow<ScanSession?>(null)
     override val activeSession: StateFlow<ScanSession?> = _activeSession.asStateFlow()
 
-    override suspend fun startScan(name: String, mapId: String?): Result<ScanSession, DataError.Local> {
+    override suspend fun startScan(name: String, mapId: String?): Result<ScanSession, DataError.Local> = mutex.withLock {
+        if (_activeSession.value != null) {
+            return Result.Error(DataError.Local.UNKNOWN) // Already scanning
+        }
+
         val session = ScanSession(
             id = UUID.randomUUID().toString(),
             mapId = mapId,
@@ -39,7 +46,7 @@ class RealScanManager(
         }
     }
 
-    override suspend fun stopScan(): Result<Unit, DataError.Local> {
+    override suspend fun stopScan(): Result<Unit, DataError.Local> = mutex.withLock {
         val current = _activeSession.value ?: return Result.Success(Unit)
         
         return when (val result = sessionDataSource.endSession(current.id, System.currentTimeMillis())) {
@@ -51,12 +58,16 @@ class RealScanManager(
         }
     }
 
-    override suspend fun recordMeasurement(point: NetworkMeasurementPoint): Result<Unit, DataError.Local> {
+    override suspend fun recordMeasurement(point: NetworkMeasurementPoint): Result<Unit, DataError.Local> = mutex.withLock {
         val session = _activeSession.value ?: return Result.Error(DataError.Local.NOT_FOUND)
         
         val saveResult = measurementDataSource.saveMeasurementPoint(session.id, point)
         if (saveResult is Result.Error) return saveResult
         
-        return sessionDataSource.incrementMeasurementCount(session.id)
+        val countResult = sessionDataSource.incrementMeasurementCount(session.id)
+        if (countResult is Result.Success) {
+            _activeSession.value = session.copy(measurementCount = session.measurementCount + 1)
+        }
+        return countResult
     }
 }

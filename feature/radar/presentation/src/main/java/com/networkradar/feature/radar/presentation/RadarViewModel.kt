@@ -2,40 +2,69 @@ package com.networkradar.feature.radar.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.networkradar.core.domain.indoor.IndoorDataSource
+import com.networkradar.core.domain.indoor.IndoorMapLocalDataSource
 import com.networkradar.core.domain.measurement.ScanManager
+import com.networkradar.core.domain.util.Result
 import com.networkradar.core.domain.util.onFailure
 import com.networkradar.core.domain.util.onSuccess
 import com.networkradar.feature.radar.domain.AnalyzeScanUseCase
 import com.networkradar.feature.radar.domain.ObserveRadarMeasurementsUseCase
+import com.networkradar.feature.speedtest.domain.RunDownloadTestUseCase
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class RadarViewModel(
     private val observeRadarMeasurementsUseCase: ObserveRadarMeasurementsUseCase,
     private val analyzeScanUseCase: AnalyzeScanUseCase,
-    private val scanManager: ScanManager
+    private val runDownloadTestUseCase: RunDownloadTestUseCase,
+    private val scanManager: ScanManager,
+    private val indoorDataSource: IndoorDataSource,
+    private val mapDataSource: IndoorMapLocalDataSource
 ) : ViewModel() {
 
     private val _analysisState = MutableStateFlow<AnalysisState>(AnalysisState.Idle)
+    private val _isSpatialScan = MutableStateFlow(false)
+    private val _downloadSpeed = MutableStateFlow<Double?>(null)
+    private val _isTestingSpeed = MutableStateFlow(false)
 
-    val state = combine(
-        observeRadarMeasurementsUseCase(),
+    // Shared measurement stream to avoid duplicate collection
+    private val measurements = observeRadarMeasurementsUseCase()
+        .shareIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            replay = 1
+        )
+
+    val state: StateFlow<RadarState> = combine(
+        measurements,
         scanManager.activeSession,
-        _analysisState
-    ) { measurement, activeSession, analysis ->
+        _isSpatialScan,
+        indoorDataSource.activeMap,
+        _analysisState,
+        _downloadSpeed,
+        _isTestingSpeed
+    ) { measurement, activeSession, isSpatial, activeMap, analysis, speed, isTesting ->
         RadarState(
             measurement = measurement,
             activeSession = activeSession,
+            isSpatialScan = isSpatial,
+            selectedMap = activeMap,
             intelligenceSummary = (analysis as? AnalysisState.Completed)?.summary,
             analyzedSessionId = (analysis as? AnalysisState.Completed)?.sessionId,
-            isAnalyzing = analysis is AnalysisState.Loading
+            isAnalyzing = analysis is AnalysisState.Loading,
+            downloadSpeedMbps = speed,
+            isTestingSpeed = isTesting
         )
     }.stateIn(
         scope = viewModelScope,
@@ -47,8 +76,8 @@ class RadarViewModel(
     val events = _events.receiveAsFlow()
 
     init {
-        // Automatic recording of measurements when a scan is active
-        observeRadarMeasurementsUseCase()
+        // Shared stream used for recording
+        measurements
             .onEach { measurement ->
                 if (scanManager.activeSession.value != null) {
                     scanManager.recordMeasurement(measurement.point)
@@ -59,11 +88,25 @@ class RadarViewModel(
 
     fun onAction(action: RadarAction) {
         when (action) {
-            is RadarAction.StartScan -> {
+            is RadarAction.StartQuickScan -> {
                 viewModelScope.launch {
                     _analysisState.value = AnalysisState.Idle
-                    val activeMapId = state.value.measurement?.point?.indoorPosition?.mapId
-                    scanManager.startScan(action.name, activeMapId)
+                    _isSpatialScan.value = false
+                    scanManager.startScan(action.name, null)
+                }
+            }
+            is RadarAction.StartSpatialScan -> {
+                viewModelScope.launch {
+                    _analysisState.value = AnalysisState.Idle
+                    _isSpatialScan.value = true
+                    
+                    val mapResult = mapDataSource.getMapById(action.mapId)
+                    if (mapResult is Result.Success && mapResult.data != null) {
+                        indoorDataSource.setActiveMap(mapResult.data)
+                        scanManager.startScan(action.name, action.mapId)
+                    } else {
+                         _events.send(RadarEvent.Error("Selected floor plan not found."))
+                    }
                 }
             }
             RadarAction.StopScan -> {
@@ -76,6 +119,36 @@ class RadarViewModel(
                     }
                 }
             }
+            RadarAction.RunSpeedTest -> {
+                runSpeedTest()
+            }
+        }
+    }
+
+    private fun runSpeedTest() {
+        viewModelScope.launch {
+            _isTestingSpeed.value = true
+            _downloadSpeed.value = null
+            
+            // Using a reliable test file URL (e.g. from a known CDN or speed test service)
+            // In a real app this would be configurable.
+            val testUrl = "https://speed.cloudflare.com/__down?bytes=10000000" 
+            
+            runDownloadTestUseCase(testUrl)
+                .onEach { result ->
+                    when (result) {
+                        is Result.Success -> {
+                            _downloadSpeed.value = result.data
+                        }
+                        is Result.Error -> {
+                            _events.send(RadarEvent.Error("Speed test failed: ${result.error}"))
+                        }
+                    }
+                }
+                .launchIn(viewModelScope)
+                .invokeOnCompletion {
+                    _isTestingSpeed.value = false
+                }
         }
     }
 

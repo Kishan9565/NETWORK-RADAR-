@@ -1,8 +1,10 @@
 package com.networkradar.core.data.networking
 
 import android.content.Context
+import android.os.Build
 import android.telephony.CellInfo
 import android.telephony.CellInfoLte
+import android.telephony.CellInfoNr
 import android.telephony.PhoneStateListener
 import android.telephony.TelephonyManager
 import com.networkradar.core.domain.measurement.CellularDataSource
@@ -42,22 +44,54 @@ class AndroidCellularDataSource(
             telephonyManager.allCellInfo
         } catch (e: SecurityException) {
             null
-        }
+        } ?: return null
 
-        val lteInfo = allCellInfo?.filterIsInstance<CellInfoLte>()?.firstOrNull { it.isRegistered }
+        val registeredCell = allCellInfo.firstOrNull { it.isRegistered } ?: return null
         
-        return if (lteInfo != null) {
-            val cellSignal = lteInfo.cellSignalStrength
-            CellularMeasurement(
-                networkType = "LTE",
-                rsrp = cellSignal.rsrp.takeIf { it != CellInfo.UNAVAILABLE },
-                rsrq = cellSignal.rsrq.takeIf { it != CellInfo.UNAVAILABLE },
-                sinr = cellSignal.rssnr.takeIf { it != CellInfo.UNAVAILABLE },
-                rssi = null,
-                timestamp = System.currentTimeMillis()
-            )
-        } else {
-            null
+        return when (registeredCell) {
+            is CellInfoLte -> {
+                val cellSignal = registeredCell.cellSignalStrength
+                CellularMeasurement(
+                    networkType = "LTE",
+                    rsrp = cellSignal.rsrp.takeIf { it != CellInfo.UNAVAILABLE },
+                    rsrq = cellSignal.rsrq.takeIf { it != CellInfo.UNAVAILABLE },
+                    sinr = cellSignal.rssnr.takeIf { it != CellInfo.UNAVAILABLE },
+                    rssi = null,
+                    timestamp = System.currentTimeMillis()
+                )
+            }
+            is CellInfoNr -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val cellSignal = registeredCell.cellSignalStrength as? android.telephony.CellSignalStrengthNr
+                    CellularMeasurement(
+                        networkType = "5G NR",
+                        rsrp = cellSignal?.ssRsrp?.takeIf { it != CellInfo.UNAVAILABLE },
+                        rsrq = cellSignal?.ssRsrq?.takeIf { it != CellInfo.UNAVAILABLE },
+                        sinr = cellSignal?.ssSinr?.takeIf { it != CellInfo.UNAVAILABLE },
+                        rssi = cellSignal?.csiRsrp?.takeIf { it != CellInfo.UNAVAILABLE },
+                        timestamp = System.currentTimeMillis()
+                    )
+                } else {
+                    CellularMeasurement(
+                        networkType = "5G NR (Legacy)",
+                        rsrp = null,
+                        rsrq = null,
+                        sinr = null,
+                        rssi = null,
+                        timestamp = System.currentTimeMillis()
+                    )
+                }
+            }
+            else -> {
+                CellularMeasurement(
+                    networkType = "Other (${registeredCell.javaClass.simpleName})",
+                    rsrp = null,
+                    rsrq = null,
+                    sinr = null,
+                    rssi = null,
+                    timestamp = System.currentTimeMillis()
+                )
+            }
         }
     }
 }

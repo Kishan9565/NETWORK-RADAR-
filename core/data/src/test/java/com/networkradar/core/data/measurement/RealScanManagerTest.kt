@@ -118,9 +118,16 @@ class RealScanManagerTest {
         }
 
         scanManager.startScan("Test Scan")
-        val initialSession = scanManager.activeSession.value!!
         
-        val point = NetworkMeasurementPoint(null, null, null, null, null, 123L)
+        val point = NetworkMeasurementPoint(
+            id = null,
+            location = null,
+            indoorPosition = null,
+            wifi = null,
+            cellular = null,
+            internet = null,
+            timestamp = 123L
+        )
         
         val jobs = List(10) {
             async { scanManager.recordMeasurement(point) }

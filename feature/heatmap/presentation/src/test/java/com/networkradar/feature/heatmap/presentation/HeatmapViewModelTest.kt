@@ -4,7 +4,6 @@ import app.cash.turbine.test
 import assertk.assertThat
 import assertk.assertions.isEqualTo
 import assertk.assertions.isNotNull
-import assertk.assertions.isNull
 import com.networkradar.core.domain.indoor.IndoorMap
 import com.networkradar.core.domain.indoor.IndoorMapLocalDataSource
 import com.networkradar.core.domain.measurement.ScanSession
@@ -91,7 +90,7 @@ class HeatmapViewModelTest {
     @Test
     fun `LoadSession with valid data triggers heatmap generation`() = runTest {
         val session = ScanSession("session-1", "map-1", "Spatial Scan", 0L, null, 10)
-        val map = IndoorMap("map-1", "Office", "", 10.0, 10.0, 1.0)
+        val map = IndoorMap("map-1", "Office", 10.0f, 10.0f, 1L)
         coEvery { sessionDataSource.getSessionById("session-1") } returns Result.Success(session)
         coEvery { mapDataSource.getMapById("map-1") } returns Result.Success(map)
         coEvery { generateHeatmapUseCase(any(), any(), any()) } returns Result.Success(

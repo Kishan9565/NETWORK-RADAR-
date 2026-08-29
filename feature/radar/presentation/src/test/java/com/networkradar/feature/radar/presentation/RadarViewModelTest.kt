@@ -4,7 +4,6 @@ import app.cash.turbine.test
 import assertk.assertThat
 import assertk.assertions.isEqualTo
 import assertk.assertions.isNotNull
-import assertk.assertions.isNull
 import com.networkradar.core.domain.indoor.IndoorDataSource
 import com.networkradar.core.domain.indoor.IndoorMap
 import com.networkradar.core.domain.indoor.IndoorMapLocalDataSource
@@ -13,6 +12,7 @@ import com.networkradar.core.domain.measurement.NetworkMeasurementPoint
 import com.networkradar.core.domain.measurement.ScanManager
 import com.networkradar.core.domain.measurement.ScanSession
 import com.networkradar.core.domain.networking.ConnectivityState
+import com.networkradar.core.domain.networking.NetworkType
 import com.networkradar.core.domain.util.Result
 import com.networkradar.feature.radar.domain.AnalyzeScanUseCase
 import com.networkradar.feature.radar.domain.ObserveRadarMeasurementsUseCase
@@ -57,9 +57,9 @@ class RadarViewModelTest {
         
         every { observeRadarMeasurementsUseCase() } returns flowOf(
             RadarMeasurement(
-                connectivity = ConnectivityState(ConnectivityState.NetworkType.WIFI, true),
+                connectivity = ConnectivityState(isConnected = true, networkType = NetworkType.WIFI),
                 locationStatus = LocationObservation.Unavailable,
-                point = NetworkMeasurementPoint(null, null, null, null, null, 123L)
+                point = NetworkMeasurementPoint(null, null, null, null, null, null, 123L)
             )
         )
         every { scanManager.activeSession } returns activeSessionFlow
@@ -93,7 +93,7 @@ class RadarViewModelTest {
 
     @Test
     fun `StartSpatialScan with valid map starts scan with mapId`() = runTest {
-        val map = IndoorMap("map-1", "Office", "", 10.0, 10.0, 1.0)
+        val map = IndoorMap("map-1", "Office", 10.0f, 10.0f, 1L)
         coEvery { mapDataSource.getMapById("map-1") } returns Result.Success(map)
         coEvery { scanManager.startScan(any(), any()) } returns Result.Success(mockk())
         
@@ -106,7 +106,6 @@ class RadarViewModelTest {
 
     @Test
     fun `ObserveRadarMeasurementsUseCase is called only once`() = runTest {
-
         verify(exactly = 1) { observeRadarMeasurementsUseCase() }
     }
 }

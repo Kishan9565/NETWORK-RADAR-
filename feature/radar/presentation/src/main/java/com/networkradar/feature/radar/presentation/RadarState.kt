@@ -12,5 +12,7 @@ data class RadarState(
     val selectedMap: IndoorMap? = null,
     val intelligenceSummary: ScanIntelligenceSummary? = null,
     val analyzedSessionId: String? = null,
-    val isAnalyzing: Boolean = false
+    val isAnalyzing: Boolean = false,
+    val downloadSpeedMbps: Double? = null,
+    val isTestingSpeed: Boolean = false
 )

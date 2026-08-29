@@ -12,6 +12,7 @@ dependencies {
     implementation(project(":core:domain"))
     implementation(project(":core:presentation"))
     implementation(project(":feature:radar:domain"))
+    implementation(project(":feature:speedtest:domain"))
     
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.navigation.compose)

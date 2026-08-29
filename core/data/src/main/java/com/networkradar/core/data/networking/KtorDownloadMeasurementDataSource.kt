@@ -4,6 +4,8 @@ import com.networkradar.core.domain.measurement.DownloadMeasurementDataSource
 import com.networkradar.core.domain.util.DataError
 import com.networkradar.core.domain.util.Result
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.utils.io.core.remaining
@@ -18,7 +20,12 @@ class KtorDownloadMeasurementDataSource(
 
     override fun download(url: String): Flow<Result<Double, DataError.Network>> = flow {
         try {
-            httpClient.prepareGet(url).execute { response ->
+            // Override global timeout for long-running speed test
+            httpClient.prepareGet(url) {
+                timeout {
+                    requestTimeoutMillis = 60_000 // 60 seconds for large test files
+                }
+            }.execute { response ->
                 val channel = response.bodyAsChannel()
                 var totalBytes = 0L
                 val startNano = System.nanoTime()

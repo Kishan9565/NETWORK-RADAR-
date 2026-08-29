@@ -8,24 +8,41 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
+    primary = Primary,
+    secondary = Secondary,
+    tertiary = Tertiary,
+    background = Background,
+    surface = Surface,
+    onPrimary = OnPrimary,
+    onSecondary = OnSecondary,
+    onBackground = OnBackground,
+    onSurface = OnSurface,
+    surfaceVariant = SurfaceVariant,
+    onSurfaceVariant = OnSurfaceVariant
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
+    primary = Primary,
+    secondary = Secondary,
+    tertiary = Tertiary,
+    background = Color(0xFFF8F9FA),
+    surface = Color.White,
+    onPrimary = OnPrimary,
+    onSecondary = OnSecondary,
+    onBackground = Color(0xFF161B22),
+    onSurface = Color(0xFF161B22),
+    surfaceVariant = Color(0xFFF0F2F5),
+    onSurfaceVariant = NeutralGray
 )
 
 @Composable
 fun NetworkRadarTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {

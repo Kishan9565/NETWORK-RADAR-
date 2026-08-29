@@ -3,13 +3,16 @@ package com.networkradar.feature.radar.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.networkradar.core.domain.indoor.IndoorDataSource
+import com.networkradar.core.domain.indoor.IndoorMap
 import com.networkradar.core.domain.indoor.IndoorMapLocalDataSource
 import com.networkradar.core.domain.measurement.ScanManager
+import com.networkradar.core.domain.measurement.ScanSession
 import com.networkradar.core.domain.util.Result
 import com.networkradar.core.domain.util.onFailure
 import com.networkradar.core.domain.util.onSuccess
 import com.networkradar.feature.radar.domain.AnalyzeScanUseCase
 import com.networkradar.feature.radar.domain.ObserveRadarMeasurementsUseCase
+import com.networkradar.feature.radar.domain.RadarMeasurement
 import com.networkradar.feature.speedtest.domain.RunDownloadTestUseCase
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,7 +24,6 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class RadarViewModel(
@@ -47,22 +49,27 @@ class RadarViewModel(
         )
 
     val state: StateFlow<RadarState> = combine(
-        measurements,
-        scanManager.activeSession,
-        _isSpatialScan,
-        indoorDataSource.activeMap,
-        _analysisState,
+        combine(
+            measurements,
+            scanManager.activeSession,
+            _isSpatialScan,
+            indoorDataSource.activeMap,
+            _analysisState
+        ) { measurement, activeSession, isSpatial, activeMap, analysis ->
+            RadarState(
+                measurement = measurement,
+                activeSession = activeSession,
+                isSpatialScan = isSpatial,
+                selectedMap = activeMap,
+                intelligenceSummary = (analysis as? AnalysisState.Completed)?.summary,
+                analyzedSessionId = (analysis as? AnalysisState.Completed)?.sessionId,
+                isAnalyzing = analysis is AnalysisState.Loading
+            )
+        },
         _downloadSpeed,
         _isTestingSpeed
-    ) { measurement, activeSession, isSpatial, activeMap, analysis, speed, isTesting ->
-        RadarState(
-            measurement = measurement,
-            activeSession = activeSession,
-            isSpatialScan = isSpatial,
-            selectedMap = activeMap,
-            intelligenceSummary = (analysis as? AnalysisState.Completed)?.summary,
-            analyzedSessionId = (analysis as? AnalysisState.Completed)?.sessionId,
-            isAnalyzing = analysis is AnalysisState.Loading,
+    ) { baseState, speed, isTesting ->
+        baseState.copy(
             downloadSpeedMbps = speed,
             isTestingSpeed = isTesting
         )
@@ -130,8 +137,6 @@ class RadarViewModel(
             _isTestingSpeed.value = true
             _downloadSpeed.value = null
             
-            // Using a reliable test file URL (e.g. from a known CDN or speed test service)
-            // In a real app this would be configurable.
             val testUrl = "https://speed.cloudflare.com/__down?bytes=10000000" 
             
             runDownloadTestUseCase(testUrl)

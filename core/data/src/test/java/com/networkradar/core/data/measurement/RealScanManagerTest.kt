@@ -12,6 +12,9 @@ import com.networkradar.core.domain.util.Result
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -84,5 +87,46 @@ class RealScanManagerTest {
             measurementDataSource.saveMeasurementPoint(session.id, point)
             sessionDataSource.incrementMeasurementCount(session.id)
         }
+        
+        // Check local state increment
+        assertThat(scanManager.activeSession.value?.measurementCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `concurrent startScan calls should not leak multiple sessions`() = runTest {
+        coEvery { sessionDataSource.startSession(any()) } coAnswers {
+            delay(100)
+            Result.Success(Unit)
+        }
+
+        val results = awaitAll(
+            async { scanManager.startScan("Scan 1") },
+            async { scanManager.startScan("Scan 2") }
+        )
+
+        assertThat(results.count { it is Result.Success }).isEqualTo(1)
+        assertThat(results.count { it is Result.Error }).isEqualTo(1)
+    }
+
+    @Test
+    fun `concurrent recordMeasurement calls should remain consistent`() = runTest {
+        coEvery { sessionDataSource.startSession(any()) } returns Result.Success(Unit)
+        coEvery { measurementDataSource.saveMeasurementPoint(any(), any()) } returns Result.Success(Unit)
+        coEvery { sessionDataSource.incrementMeasurementCount(any()) } coAnswers {
+            delay(10)
+            Result.Success(Unit)
+        }
+
+        scanManager.startScan("Test Scan")
+        val initialSession = scanManager.activeSession.value!!
+        
+        val point = NetworkMeasurementPoint(null, null, null, null, null, 123L)
+        
+        val jobs = List(10) {
+            async { scanManager.recordMeasurement(point) }
+        }
+        jobs.awaitAll()
+        
+        assertThat(scanManager.activeSession.value?.measurementCount).isEqualTo(10)
     }
 }

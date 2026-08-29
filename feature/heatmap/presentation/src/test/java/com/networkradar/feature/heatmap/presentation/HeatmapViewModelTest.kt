@@ -1,0 +1,112 @@
+package com.networkradar.feature.heatmap.presentation
+
+import app.cash.turbine.test
+import assertk.assertThat
+import assertk.assertions.isEqualTo
+import assertk.assertions.isNotNull
+import assertk.assertions.isNull
+import com.networkradar.core.domain.indoor.IndoorMap
+import com.networkradar.core.domain.indoor.IndoorMapLocalDataSource
+import com.networkradar.core.domain.measurement.ScanSession
+import com.networkradar.core.domain.measurement.ScanSessionLocalDataSource
+import com.networkradar.core.domain.util.Result
+import com.networkradar.feature.heatmap.domain.GenerateHeatmapUseCase
+import io.mockk.coEvery
+import io.mockk.mockk
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class HeatmapViewModelTest {
+
+    private lateinit var viewModel: HeatmapViewModel
+    private val sessionDataSource = mockk<ScanSessionLocalDataSource>()
+    private val mapDataSource = mockk<IndoorMapLocalDataSource>()
+    private val generateHeatmapUseCase = mockk<GenerateHeatmapUseCase>()
+    private val testDispatcher = StandardTestDispatcher()
+
+    @BeforeEach
+    fun setUp() {
+        Dispatchers.setMain(testDispatcher)
+        viewModel = HeatmapViewModel(sessionDataSource, mapDataSource, generateHeatmapUseCase)
+    }
+
+    @AfterEach
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `LoadSession with missing session shows error`() = runTest {
+        coEvery { sessionDataSource.getSessionById("session-1") } returns Result.Success(null)
+
+        viewModel.onAction(HeatmapAction.LoadSession("session-1"))
+        testDispatcher.scheduler.runCurrent()
+
+        viewModel.state.test {
+            val state = awaitItem()
+            assertThat(state.error).isEqualTo("Scan session not found.")
+            assertThat(state.isLoading).isEqualTo(false)
+        }
+    }
+
+    @Test
+    fun `LoadSession with non-spatial session shows error`() = runTest {
+        val session = ScanSession("session-1", null, "Quick Scan", 0L, null, 0)
+        coEvery { sessionDataSource.getSessionById("session-1") } returns Result.Success(session)
+
+        viewModel.onAction(HeatmapAction.LoadSession("session-1"))
+        testDispatcher.scheduler.runCurrent()
+
+        viewModel.state.test {
+            val state = awaitItem()
+            assertThat(state.error).isEqualTo("This scan was not recorded on a floor plan.")
+            assertThat(state.isLoading).isEqualTo(false)
+        }
+    }
+
+    @Test
+    fun `LoadSession with missing map shows error`() = runTest {
+        val session = ScanSession("session-1", "map-1", "Spatial Scan", 0L, null, 0)
+        coEvery { sessionDataSource.getSessionById("session-1") } returns Result.Success(session)
+        coEvery { mapDataSource.getMapById("map-1") } returns Result.Success(null)
+
+        viewModel.onAction(HeatmapAction.LoadSession("session-1"))
+        testDispatcher.scheduler.runCurrent()
+
+        viewModel.state.test {
+            val state = awaitItem()
+            assertThat(state.error).isEqualTo("The floor plan used by this scan is no longer available.")
+            assertThat(state.isLoading).isEqualTo(false)
+        }
+    }
+
+    @Test
+    fun `LoadSession with valid data triggers heatmap generation`() = runTest {
+        val session = ScanSession("session-1", "map-1", "Spatial Scan", 0L, null, 10)
+        val map = IndoorMap("map-1", "Office", "", 10.0, 10.0, 1.0)
+        coEvery { sessionDataSource.getSessionById("session-1") } returns Result.Success(session)
+        coEvery { mapDataSource.getMapById("map-1") } returns Result.Success(map)
+        coEvery { generateHeatmapUseCase(any(), any(), any()) } returns Result.Success(
+            GenerateHeatmapUseCase.HeatmapResult(emptyList(), emptyList())
+        )
+
+        viewModel.onAction(HeatmapAction.LoadSession("session-1"))
+        testDispatcher.scheduler.runCurrent()
+
+        viewModel.state.test {
+            val state = awaitItem()
+            assertThat(state.activeMap).isNotNull()
+            assertThat(state.activeMap?.id).isEqualTo("map-1")
+            // error is set because HeatmapResult was empty in this mock
+            assertThat(state.error).isEqualTo("No spatial measurements were recorded.")
+        }
+    }
+}

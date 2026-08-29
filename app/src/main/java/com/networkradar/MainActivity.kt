@@ -16,12 +16,10 @@ import com.networkradar.feature.heatmap.presentation.navigateToHeatmap
 import com.networkradar.feature.history.presentation.historyGraph
 import com.networkradar.feature.history.presentation.navigateToHistory
 import com.networkradar.feature.history.presentation.navigateToScanReport
-import com.networkradar.feature.map.presentation.MapRoute
 import com.networkradar.feature.map.presentation.mapGraph
 import com.networkradar.feature.map.presentation.navigateToMap
-import com.networkradar.feature.radar.presentation.RadarRoute
-import com.networkradar.feature.radar.presentation.navigateToRadar
 import com.networkradar.feature.radar.presentation.radarGraph
+import com.networkradar.feature.radar.presentation.navigateToRadar
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,6 +49,9 @@ class MainActivity : ComponentActivity() {
                     radarGraph(
                         onViewHeatmap = { sessionId ->
                             navController.navigateToHeatmap(sessionId)
+                        },
+                        onNavigateToMapSelection = {
+                            navController.navigateToMap()
                         }
                     )
                     historyGraph(

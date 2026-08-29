@@ -1,5 +1,6 @@
 package com.networkradar.feature.radar.presentation
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -73,7 +75,8 @@ fun RadarScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp)
-                .verticalScroll(scrollState),
+                .verticalScroll(scrollState)
+                .animateContentSize(),
             verticalArrangement = Arrangement.Top
         ) {
             if (activeSession == null) {
@@ -122,6 +125,14 @@ fun RadarScreen(
 
             if (measurement != null) {
                 LiveMeasurementView(measurement, state.isSpatialScan)
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                SpeedTestView(
+                    speedMbps = state.downloadSpeedMbps,
+                    isTesting = state.isTestingSpeed,
+                    onRunTest = { onAction(RadarAction.RunSpeedTest) }
+                )
+                Spacer(modifier = Modifier.height(24.dp))
             }
         }
     }
@@ -198,6 +209,50 @@ private fun ActiveScanHeader(
             if (isSpatial) {
                 Text(text = "Walk around the area to map quality.", style = MaterialTheme.typography.labelSmall)
             }
+        }
+    }
+}
+
+@Composable
+private fun SpeedTestView(
+    speedMbps: Double?,
+    isTesting: Boolean,
+    onRunTest: () -> Unit
+) {
+    Text(text = "ACTIVE NETWORK TEST", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.secondary)
+    Spacer(modifier = Modifier.height(8.dp))
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(text = "Download Speed", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    if (isTesting) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = "Testing...", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    } else {
+                        Text(
+                            text = speedMbps?.let { "${"%.2f".format(it)} Mbps" } ?: "Not tested",
+                            style = MaterialTheme.typography.headlineMedium
+                        )
+                    }
+                }
+                Button(onClick = onRunTest, enabled = !isTesting) {
+                    Text("Run Speed Test")
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Note: This performs an active network request and uses data.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

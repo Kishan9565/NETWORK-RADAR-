@@ -5,6 +5,9 @@ plugins {
 
 android {
     namespace = "com.networkradar.core.data"
+    buildFeatures {
+        buildConfig = true
+    }
 }
 
 dependencies {

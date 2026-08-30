@@ -31,7 +31,6 @@ dependencies {
     implementation(project(":feature:radar:presentation"))
     implementation(project(":feature:speedtest:presentation"))
     implementation(project(":feature:map:presentation"))
-    implementation(project(":feature:scan:presentation"))
     implementation(project(":feature:heatmap:presentation"))
     implementation(project(":feature:history:presentation"))
     implementation(project(":feature:comparison:presentation"))

@@ -47,10 +47,6 @@ include(":feature:map:domain")
 include(":feature:map:data")
 include(":feature:map:presentation")
 
-include(":feature:scan:domain")
-include(":feature:scan:data")
-include(":feature:scan:presentation")
-
 include(":feature:heatmap:domain")
 include(":feature:heatmap:data")
 include(":feature:heatmap:presentation")

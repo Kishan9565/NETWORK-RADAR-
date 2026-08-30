@@ -1,7 +1,12 @@
 package com.networkradar.feature.radar.presentation
 
+import android.Manifest
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -15,8 +20,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -27,6 +32,7 @@ import com.networkradar.core.designsystem.SignalPoor
 import com.networkradar.core.designsystem.SignalUnavailable
 import com.networkradar.core.domain.location.LocationObservation
 import com.networkradar.core.domain.measurement.*
+import com.networkradar.core.presentation.util.ObserveAsEvents
 import com.networkradar.feature.radar.domain.RadarMeasurement
 import org.koin.androidx.compose.koinViewModel
 
@@ -37,6 +43,34 @@ fun RadarRoot(
     viewModel: RadarViewModel = koinViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions.values.all { it }
+        viewModel.onAction(RadarAction.PermissionResult(granted))
+    }
+
+    ObserveAsEvents(viewModel.events) { event ->
+        when (event) {
+            is RadarEvent.Error -> { /* Handle error */ }
+            RadarEvent.RequestLocationPermission -> {
+                permissionLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    )
+                )
+            }
+            RadarEvent.OpenAppSettings -> {
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", context.packageName, null)
+                }
+                context.startActivity(intent)
+            }
+        }
+    }
 
     RadarScreen(
         state = state,
@@ -44,6 +78,13 @@ fun RadarRoot(
         onViewHeatmap = onViewHeatmap,
         onNavigateToMapSelection = onNavigateToMapSelection
     )
+    
+    if (state.showPermissionRationale) {
+        PermissionRationaleDialog(
+            onConfirm = { viewModel.onAction(RadarAction.RequestPermission) },
+            onDismiss = { viewModel.onAction(RadarAction.DismissRationale) }
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -72,6 +113,13 @@ fun RadarScreen(
                 .animateContentSize(),
             verticalArrangement = Arrangement.Top
         ) {
+            if (!state.isLocationPermissionGranted && activeSession == null) {
+                PermissionDeniedBanner(
+                    onRequestPermission = { onAction(RadarAction.RequestPermission) }
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
             if (activeSession == null) {
                 ScanModeSelection(
                     selectedMapName = state.selectedMap?.name,
@@ -133,6 +181,61 @@ fun RadarScreen(
                 LocationView(measurement, state.isSpatialScan)
                 
                 Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PermissionRationaleDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Location Access Required") },
+        text = {
+            Text("Network Radar needs location access to measure Wi-Fi and GPS signal quality at your position. This is required by Android to perform network scans.")
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text("Allow Access")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Later")
+            }
+        }
+    )
+}
+
+@Composable
+private fun PermissionDeniedBanner(
+    onRequestPermission: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Location Permission Required",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Text(
+                text = "To measure signal quality, please grant location access.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = onRequestPermission,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
+                Text("Grant Permission")
             }
         }
     }
@@ -340,13 +443,21 @@ private fun RFMetricCard(
 
 @Composable
 private fun SignalBadge(quality: SignalQuality) {
-    val (color, text) = when (quality) {
-        SignalQuality.EXCELLENT -> SignalExcellent to "EXCELLENT"
-        SignalQuality.GOOD -> SignalGood to "GOOD"
-        SignalQuality.FAIR -> SignalFair to "FAIR"
-        SignalQuality.POOR -> SignalPoor to "POOR"
-        SignalQuality.UNAVAILABLE -> SignalUnavailable to "UNAVAILABLE"
+    val color = when (quality) {
+        SignalQuality.EXCELLENT -> SignalExcellent
+        SignalQuality.GOOD -> SignalGood
+        SignalQuality.FAIR -> SignalFair
+        SignalQuality.POOR -> SignalPoor
+        SignalQuality.UNAVAILABLE -> SignalUnavailable
     }
+    val text = when (quality) {
+        SignalQuality.EXCELLENT -> "EXCELLENT"
+        SignalQuality.GOOD -> "GOOD"
+        SignalQuality.FAIR -> "FAIR"
+        SignalQuality.POOR -> "POOR"
+        SignalQuality.UNAVAILABLE -> "UNAVAILABLE"
+    }
+    
     Surface(
         color = color.copy(alpha = 0.2f),
         contentColor = color,
@@ -499,7 +610,7 @@ private fun IntelligenceSummaryView(
 }
 
 @Composable
-private fun RankedSpotCard(label: String, spot: RankedSpot?, containerColor: Color, modifier: Modifier = Modifier) {
+private fun RankedSpotCard(label: String, spot: RankedSpot?, containerColor: androidx.compose.ui.graphics.Color, modifier: Modifier = Modifier) {
     Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = containerColor)) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(text = label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)

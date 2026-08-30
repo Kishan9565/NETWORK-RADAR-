@@ -14,5 +14,7 @@ data class RadarState(
     val analyzedSessionId: String? = null,
     val isAnalyzing: Boolean = false,
     val downloadSpeedMbps: Double? = null,
-    val isTestingSpeed: Boolean = false
+    val isTestingSpeed: Boolean = false,
+    val isLocationPermissionGranted: Boolean = true, // Default to true to avoid flash, will be updated by VM
+    val showPermissionRationale: Boolean = false
 )

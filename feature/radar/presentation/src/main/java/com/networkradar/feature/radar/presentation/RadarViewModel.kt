@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class RadarViewModel(
@@ -39,6 +40,7 @@ class RadarViewModel(
     private val _isSpatialScan = MutableStateFlow(false)
     private val _downloadSpeed = MutableStateFlow<Double?>(null)
     private val _isTestingSpeed = MutableStateFlow(false)
+    private val _permissionState = MutableStateFlow(PermissionState())
 
     // Shared measurement stream to avoid duplicate collection
     private val measurements = observeRadarMeasurementsUseCase()
@@ -67,11 +69,14 @@ class RadarViewModel(
             )
         },
         _downloadSpeed,
-        _isTestingSpeed
-    ) { baseState, speed, isTesting ->
+        _isTestingSpeed,
+        _permissionState
+    ) { baseState, speed, isTesting, permission ->
         baseState.copy(
             downloadSpeedMbps = speed,
-            isTestingSpeed = isTesting
+            isTestingSpeed = isTesting,
+            isLocationPermissionGranted = permission.isGranted,
+            showPermissionRationale = permission.showRationale
         )
     }.stateIn(
         scope = viewModelScope,
@@ -89,6 +94,12 @@ class RadarViewModel(
                 if (scanManager.activeSession.value != null) {
                     scanManager.recordMeasurement(measurement.point)
                 }
+                
+                // Reactive permission check: if ObserveRadarMeasurementsUseCase reports PermissionRequired, update state
+                val isGranted = measurement.locationStatus !is com.networkradar.core.domain.location.LocationObservation.PermissionRequired
+                if (_permissionState.value.isGranted != isGranted) {
+                    _permissionState.update { it.copy(isGranted = isGranted) }
+                }
             }
             .launchIn(viewModelScope)
     }
@@ -96,6 +107,10 @@ class RadarViewModel(
     fun onAction(action: RadarAction) {
         when (action) {
             is RadarAction.StartQuickScan -> {
+                if (!_permissionState.value.isGranted) {
+                    _permissionState.update { it.copy(showRationale = true) }
+                    return
+                }
                 viewModelScope.launch {
                     _analysisState.value = AnalysisState.Idle
                     _isSpatialScan.value = false
@@ -103,6 +118,10 @@ class RadarViewModel(
                 }
             }
             is RadarAction.StartSpatialScan -> {
+                if (!_permissionState.value.isGranted) {
+                    _permissionState.update { it.copy(showRationale = true) }
+                    return
+                }
                 viewModelScope.launch {
                     _analysisState.value = AnalysisState.Idle
                     _isSpatialScan.value = true
@@ -128,6 +147,20 @@ class RadarViewModel(
             }
             RadarAction.RunSpeedTest -> {
                 runSpeedTest()
+            }
+            is RadarAction.PermissionResult -> {
+                _permissionState.update { it.copy(isGranted = action.granted, showRationale = false) }
+                if (!action.granted) {
+                    // Logic to show "Open Settings" button is handled in UI based on state
+                }
+            }
+            RadarAction.RequestPermission -> {
+                viewModelScope.launch {
+                    _events.send(RadarEvent.RequestLocationPermission)
+                }
+            }
+            RadarAction.DismissRationale -> {
+                _permissionState.update { it.copy(showRationale = false) }
             }
         }
     }
@@ -178,4 +211,9 @@ class RadarViewModel(
             val summary: com.networkradar.core.domain.measurement.ScanIntelligenceSummary
         ) : AnalysisState
     }
+    
+    private data class PermissionState(
+        val isGranted: Boolean = true,
+        val showRationale: Boolean = false
+    )
 }

@@ -17,12 +17,14 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.bundles.koin)
+    implementation(libs.androidx.compose.material.icons.extended)
     
     testImplementation(libs.junit.jupiter.api)
     testRuntimeOnly(libs.junit.jupiter.engine)
     testImplementation(libs.assertk)
     testImplementation(libs.turbine)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.mockk)
     
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
 }

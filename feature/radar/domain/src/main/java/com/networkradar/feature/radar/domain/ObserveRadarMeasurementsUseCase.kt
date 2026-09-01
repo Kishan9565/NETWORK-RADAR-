@@ -1,6 +1,7 @@
 package com.networkradar.feature.radar.domain
 
-import com.networkradar.core.domain.indoor.IndoorDataSource
+import com.networkradar.core.domain.indoor.IndoorPosition
+import com.networkradar.core.domain.indoor.PdrDataSource
 import com.networkradar.core.domain.location.Location
 import com.networkradar.core.domain.location.LocationDataSource
 import com.networkradar.core.domain.location.LocationObservation
@@ -12,7 +13,10 @@ import com.networkradar.core.domain.measurement.WifiDataSource
 import com.networkradar.core.domain.measurement.WifiMeasurement
 import com.networkradar.core.domain.networking.ConnectivityState
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlin.math.abs
 
 
@@ -21,14 +25,14 @@ class ObserveRadarMeasurementsUseCase(
     private val wifiDataSource: WifiDataSource,
     private val cellularDataSource: CellularDataSource,
     private val locationDataSource: LocationDataSource,
-    private val indoorDataSource: IndoorDataSource
+    private val pdrDataSource: PdrDataSource
 ) {
     operator fun invoke(): Flow<RadarMeasurement> = combine(
         connectivityDataSource.getConnectivityState(),
         wifiDataSource.getWifiMeasurement(),
         cellularDataSource.getCellularMeasurement(),
         locationDataSource.getLocationUpdates(),
-        indoorDataSource.currentPosition
+        pdrDataSource.currentPosition
     ) { connectivity, wifi, cellular, locationObs, indoorPosition ->
         val currentTime = System.currentTimeMillis()
         
@@ -44,10 +48,10 @@ class ObserveRadarMeasurementsUseCase(
             locationStatus = locationObs,
             point = NetworkMeasurementPoint(
                 location = validLocation,
-                indoorPosition = indoorPosition,
+                indoorPosition = indoorPosition.takeIf { it.timestamp > 0 },
                 wifi = validWifi,
                 cellular = validCellular,
-                internet = null, // Internet speed tests are active, not passive
+                internet = null,
                 timestamp = currentTime
             )
         )

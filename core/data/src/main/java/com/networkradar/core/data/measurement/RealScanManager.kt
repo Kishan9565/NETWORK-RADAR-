@@ -23,14 +23,14 @@ class RealScanManager(
     private val _activeSession = MutableStateFlow<ScanSession?>(null)
     override val activeSession: StateFlow<ScanSession?> = _activeSession.asStateFlow()
 
-    override suspend fun startScan(name: String, mapId: String?): Result<ScanSession, DataError.Local> = mutex.withLock {
+    override suspend fun startScan(name: String, isSpatial: Boolean): Result<ScanSession, DataError.Local> = mutex.withLock {
         if (_activeSession.value != null) {
             return Result.Error(DataError.Local.UNKNOWN) // Already scanning
         }
 
         val session = ScanSession(
             id = UUID.randomUUID().toString(),
-            mapId = mapId,
+            isSpatial = isSpatial,
             name = name,
             startedAt = System.currentTimeMillis(),
             endedAt = null,

@@ -14,13 +14,11 @@ fun NavController.navigateToRadar(navOptions: NavOptions? = null) {
 }
 
 fun NavGraphBuilder.radarGraph(
-    onViewHeatmap: (String) -> Unit,
-    onNavigateToMapSelection: () -> Unit
+    onViewHeatmap: (String) -> Unit
 ) {
     composable<RadarRoute> {
         RadarRoot(
-            onViewHeatmap = onViewHeatmap,
-            onNavigateToMapSelection = onNavigateToMapSelection
+            onViewHeatmap = onViewHeatmap
         )
     }
 }

@@ -14,7 +14,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material3.Button
@@ -24,7 +23,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -48,7 +46,6 @@ import java.util.Locale
 fun DashboardRoot(
     onNavigateToRadar: () -> Unit,
     onNavigateToHistory: () -> Unit,
-    onNavigateToMaps: () -> Unit,
     onNavigateToComparison: () -> Unit,
     viewModel: DashboardViewModel = koinViewModel(),
 ) {
@@ -58,8 +55,8 @@ fun DashboardRoot(
         when (event) {
             DashboardEvent.NavigateToRadar -> onNavigateToRadar()
             DashboardEvent.NavigateToHistory -> onNavigateToHistory()
-            DashboardEvent.NavigateToMaps -> onNavigateToMaps()
             DashboardEvent.NavigateToComparison -> onNavigateToComparison()
+            else -> {}
         }
     }
 
@@ -105,7 +102,7 @@ fun DashboardScreen(
             Spacer(modifier = Modifier.height(8.dp))
             
             Text(
-                text = "Measure Internet, Wi-Fi, Cellular and RF quality at real physical locations.",
+                text = "Measure signal quality at real physical locations automatically.",
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -167,18 +164,6 @@ fun DashboardScreen(
                 )
             }
             
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            OutlinedButton(
-                onClick = { onAction(DashboardAction.ManageMaps) },
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium
-            ) {
-                Icon(Icons.Default.Layers, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("MANAGE FLOOR PLANS")
-            }
-            
             Spacer(modifier = Modifier.height(32.dp))
         }
     }
@@ -210,7 +195,7 @@ private fun LastScanCard(scan: ScanSession) {
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = if (scan.mapId != null) "Spatial Scan" else "Quick Scan",
+                text = if (scan.isSpatial) "Spatial Scan" else "Quick Scan",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

@@ -2,24 +2,126 @@ package com.networkradar.core.database
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
-import com.networkradar.core.database.dao.IndoorMapDao
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.networkradar.core.database.dao.NetworkMeasurementPointDao
 import com.networkradar.core.database.dao.ScanSessionDao
-import com.networkradar.core.database.entity.IndoorMapEntity
+import com.networkradar.core.database.dao.SpatialAnnotationDao
 import com.networkradar.core.database.entity.NetworkMeasurementPointEntity
 import com.networkradar.core.database.entity.ScanSessionEntity
+import com.networkradar.core.database.entity.SpatialAnnotationEntity
 
 @Database(
     entities = [
-        IndoorMapEntity::class,
         ScanSessionEntity::class,
-        NetworkMeasurementPointEntity::class
+        NetworkMeasurementPointEntity::class,
+        SpatialAnnotationEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class NetworkRadarDatabase : RoomDatabase() {
-    abstract fun indoorMapDao(): IndoorMapDao
     abstract fun scanSessionDao(): ScanSessionDao
     abstract fun measurementPointDao(): NetworkMeasurementPointDao
+    abstract fun spatialAnnotationDao(): SpatialAnnotationDao
+
+    companion object {
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 1. Drop the old indoor_maps table
+                db.execSQL("DROP TABLE IF EXISTS indoor_maps")
+
+                // 2. Update scan_sessions table: remove mapId, add isSpatial
+                // Room doesn't support dropping columns easily in older SQLite versions, 
+                // but we can create a new table and migrate data.
+                db.execSQL("""
+                    CREATE TABLE scan_sessions_new (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        isSpatial INTEGER NOT NULL DEFAULT 0,
+                        name TEXT NOT NULL,
+                        startedAt INTEGER NOT NULL,
+                        endedAt INTEGER,
+                        measurementCount INTEGER NOT NULL
+                    )
+                """.trimIndent())
+                
+                db.execSQL("""
+                    INSERT INTO scan_sessions_new (id, isSpatial, name, startedAt, endedAt, measurementCount)
+                    SELECT id, (CASE WHEN mapId IS NOT NULL THEN 1 ELSE 0 END), name, startedAt, endedAt, measurementCount
+                    FROM scan_sessions
+                """.trimIndent())
+                
+                db.execSQL("DROP TABLE scan_sessions")
+                db.execSQL("ALTER TABLE scan_sessions_new RENAME TO scan_sessions")
+
+                // 3. Update measurement_points table: remove mapId, add indoorTimestamp
+                db.execSQL("""
+                    CREATE TABLE measurement_points_new (
+                        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        sessionId TEXT NOT NULL,
+                        timestamp INTEGER NOT NULL,
+                        latitude REAL,
+                        longitude REAL,
+                        locationAccuracy REAL,
+                        locationTimestamp INTEGER,
+                        indoorX REAL,
+                        indoorY REAL,
+                        indoorTimestamp INTEGER,
+                        wifi_rssi INTEGER,
+                        wifi_ssid TEXT,
+                        wifi_frequency INTEGER,
+                        wifi_linkSpeed INTEGER,
+                        wifi_timestamp INTEGER NOT NULL,
+                        cell_networkType TEXT,
+                        cell_rsrp INTEGER,
+                        cell_rsrq INTEGER,
+                        cell_sinr INTEGER,
+                        cell_rssi INTEGER,
+                        cell_timestamp INTEGER NOT NULL,
+                        net_latencyMs REAL,
+                        net_downloadMbps REAL,
+                        net_uploadMbps REAL,
+                        net_timestamp INTEGER NOT NULL,
+                        FOREIGN KEY(sessionId) REFERENCES scan_sessions(id) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_measurement_points_sessionId ON measurement_points_new(sessionId)")
+
+                db.execSQL("""
+                    INSERT INTO measurement_points_new (
+                        id, sessionId, timestamp, latitude, longitude, locationAccuracy, locationTimestamp,
+                        indoorX, indoorY, indoorTimestamp,
+                        wifi_rssi, wifi_ssid, wifi_frequency, wifi_linkSpeed, wifi_timestamp,
+                        cell_networkType, cell_rsrp, cell_rsrq, cell_sinr, cell_rssi, cell_timestamp,
+                        net_latencyMs, net_downloadMbps, net_uploadMbps, net_timestamp
+                    )
+                    SELECT 
+                        id, sessionId, timestamp, latitude, longitude, locationAccuracy, locationTimestamp,
+                        indoorX, indoorY, timestamp,
+                        wifi_rssi, wifi_ssid, wifi_frequency, wifi_linkSpeed, wifi_timestamp,
+                        cell_networkType, cell_rsrp, cell_rsrq, cell_sinr, cell_rssi, cell_timestamp,
+                        net_latencyMs, net_downloadMbps, net_uploadMbps, net_timestamp
+                    FROM measurement_points
+                """.trimIndent())
+
+                db.execSQL("DROP TABLE measurement_points")
+                db.execSQL("ALTER TABLE measurement_points_new RENAME TO measurement_points")
+
+                // 4. Create spatial_annotations table
+                db.execSQL("""
+                    CREATE TABLE spatial_annotations (
+                        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        sessionId TEXT NOT NULL,
+                        x REAL NOT NULL,
+                        y REAL NOT NULL,
+                        label TEXT,
+                        timestamp INTEGER NOT NULL,
+                        FOREIGN KEY(sessionId) REFERENCES scan_sessions(id) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_spatial_annotations_sessionId ON spatial_annotations(sessionId)")
+            }
+        }
+    }
 }

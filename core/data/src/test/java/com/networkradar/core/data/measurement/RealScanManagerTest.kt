@@ -2,7 +2,6 @@ package com.networkradar.core.data.measurement
 
 import assertk.assertThat
 import assertk.assertions.isEqualTo
-import assertk.assertions.isNotNull
 import assertk.assertions.isNull
 import com.networkradar.core.domain.measurement.NetworkMeasurementPoint
 import com.networkradar.core.domain.measurement.NetworkMeasurementPointLocalDataSource
@@ -34,12 +33,12 @@ class RealScanManagerTest {
     fun `startScan should create and persist a new session`() = runTest {
         coEvery { sessionDataSource.startSession(any()) } returns Result.Success(Unit)
 
-        val result = scanManager.startScan("Test Scan", "map-1")
+        val result = scanManager.startScan("Test Scan", isSpatial = true)
 
         assertThat(result is Result.Success).isEqualTo(true)
         val session = (result as Result.Success).data
         assertThat(session.name).isEqualTo("Test Scan")
-        assertThat(session.mapId).isEqualTo("map-1")
+        assertThat(session.isSpatial).isEqualTo(true)
         assertThat(scanManager.activeSession.value).isEqualTo(session)
         
         coVerify { sessionDataSource.startSession(session) }

@@ -4,9 +4,9 @@ import app.cash.turbine.test
 import assertk.assertThat
 import assertk.assertions.isEqualTo
 import assertk.assertions.isNotNull
-import com.networkradar.core.domain.indoor.IndoorDataSource
-import com.networkradar.core.domain.indoor.IndoorMap
-import com.networkradar.core.domain.indoor.IndoorMapLocalDataSource
+import com.networkradar.core.domain.indoor.IndoorPosition
+import com.networkradar.core.domain.indoor.PdrDataSource
+import com.networkradar.core.domain.indoor.SpatialAnnotationLocalDataSource
 import com.networkradar.core.domain.location.LocationObservation
 import com.networkradar.core.domain.measurement.NetworkMeasurementPoint
 import com.networkradar.core.domain.measurement.ScanManager
@@ -43,13 +43,13 @@ class RadarViewModelTest {
     private val analyzeScanUseCase = mockk<AnalyzeScanUseCase>()
     private val runDownloadTestUseCase = mockk<RunDownloadTestUseCase>()
     private val scanManager = mockk<ScanManager>()
-    private val indoorDataSource = mockk<IndoorDataSource>()
-    private val mapDataSource = mockk<IndoorMapLocalDataSource>()
+    private val pdrDataSource = mockk<PdrDataSource>()
+    private val annotationDataSource = mockk<SpatialAnnotationLocalDataSource>()
     
     private val testDispatcher = StandardTestDispatcher()
     
     private val activeSessionFlow = MutableStateFlow<ScanSession?>(null)
-    private val activeMapFlow = MutableStateFlow<IndoorMap?>(null)
+    private val pdrPositionFlow = MutableStateFlow(IndoorPosition("", 0f, 0f, 0L))
 
     @BeforeEach
     fun setUp() {
@@ -63,16 +63,19 @@ class RadarViewModelTest {
             )
         )
         every { scanManager.activeSession } returns activeSessionFlow
-        every { indoorDataSource.activeMap } returns activeMapFlow
-        every { indoorDataSource.setActiveMap(any()) } returns Unit
+        every { pdrDataSource.currentPosition } returns pdrPositionFlow
+        every { pdrDataSource.isAvailable } returns true
+        every { pdrDataSource.startTracking(any()) } returns Unit
+        every { pdrDataSource.stopTracking() } returns Unit
+        every { pdrDataSource.resetOrigin() } returns Unit
         
         viewModel = RadarViewModel(
             observeRadarMeasurementsUseCase,
             analyzeScanUseCase,
             runDownloadTestUseCase,
             scanManager,
-            indoorDataSource,
-            mapDataSource
+            pdrDataSource,
+            annotationDataSource
         )
     }
 
@@ -82,30 +85,45 @@ class RadarViewModelTest {
     }
 
     @Test
-    fun `StartQuickScan starts scan with null mapId`() = runTest {
+    fun `StartQuickScan starts scan with isSpatial false`() = runTest {
         coEvery { scanManager.startScan(any(), any()) } returns Result.Success(mockk())
         
         viewModel.onAction(RadarAction.StartQuickScan("Quick"))
         testDispatcher.scheduler.runCurrent()
         
-        coVerify { scanManager.startScan("Quick", null) }
+        coVerify { scanManager.startScan("Quick", isSpatial = false) }
     }
 
     @Test
-    fun `StartSpatialScan with valid map starts scan with mapId`() = runTest {
-        val map = IndoorMap("map-1", "Office", 10.0f, 10.0f, 1L)
-        coEvery { mapDataSource.getMapById("map-1") } returns Result.Success(map)
-        coEvery { scanManager.startScan(any(), any()) } returns Result.Success(mockk())
+    fun `StartSpatialScan starts scan with isSpatial true and starts PDR tracking`() = runTest {
+        val session = ScanSession("session-1", true, "Spatial", 0L, null, 0)
+        coEvery { scanManager.startScan(any(), any()) } returns Result.Success(session)
         
-        viewModel.onAction(RadarAction.StartSpatialScan("Spatial", "map-1"))
+        viewModel.onAction(RadarAction.StartSpatialScan("Spatial"))
         testDispatcher.scheduler.runCurrent()
         
-        verify { indoorDataSource.setActiveMap(map) }
-        coVerify { scanManager.startScan("Spatial", "map-1") }
+        coVerify { scanManager.startScan("Spatial", isSpatial = true) }
+        verify { pdrDataSource.startTracking("session-1") }
     }
 
     @Test
-    fun `ObserveRadarMeasurementsUseCase is called only once`() = runTest {
-        verify(exactly = 1) { observeRadarMeasurementsUseCase() }
+    fun `StopScan stops PDR tracking`() = runTest {
+        activeSessionFlow.value = ScanSession("session-1", true, "Spatial", 0L, null, 10)
+        coEvery { scanManager.stopScan() } returns Result.Success(Unit)
+        coEvery { analyzeScanUseCase(any()) } returns Result.Success(mockk())
+        
+        viewModel.onAction(RadarAction.StopScan)
+        testDispatcher.scheduler.runCurrent()
+        
+        verify { pdrDataSource.stopTracking() }
+        coVerify { scanManager.stopScan() }
+    }
+
+    @Test
+    fun `RecalibratePosition calls pdrDataSource resetOrigin`() = runTest {
+        viewModel.onAction(RadarAction.RecalibratePosition)
+        testDispatcher.scheduler.runCurrent()
+        
+        verify { pdrDataSource.resetOrigin() }
     }
 }

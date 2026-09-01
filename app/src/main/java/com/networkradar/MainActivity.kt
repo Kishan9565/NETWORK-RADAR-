@@ -16,8 +16,6 @@ import com.networkradar.feature.heatmap.presentation.navigateToHeatmap
 import com.networkradar.feature.history.presentation.historyGraph
 import com.networkradar.feature.history.presentation.navigateToHistory
 import com.networkradar.feature.history.presentation.navigateToScanReport
-import com.networkradar.feature.map.presentation.mapGraph
-import com.networkradar.feature.map.presentation.navigateToMap
 import com.networkradar.feature.radar.presentation.radarGraph
 import com.networkradar.feature.radar.presentation.navigateToRadar
 
@@ -39,9 +37,6 @@ class MainActivity : ComponentActivity() {
                         onNavigateToHistory = {
                             navController.navigateToHistory()
                         },
-                        onNavigateToMaps = {
-                            navController.navigateToMap()
-                        },
                         onNavigateToComparison = {
                             navController.navigateToComparison()
                         }
@@ -49,9 +44,6 @@ class MainActivity : ComponentActivity() {
                     radarGraph(
                         onViewHeatmap = { sessionId ->
                             navController.navigateToHeatmap(sessionId)
-                        },
-                        onNavigateToMapSelection = {
-                            navController.navigateToMap()
                         }
                     )
                     historyGraph(
@@ -60,11 +52,6 @@ class MainActivity : ComponentActivity() {
                         },
                         onViewHeatmap = { sessionId ->
                             navController.navigateToHeatmap(sessionId)
-                        }
-                    )
-                    mapGraph(
-                        onPositionConfirmed = {
-                            navController.popBackStack()
                         }
                     )
                     heatmapGraph()

@@ -22,11 +22,12 @@ fun NetworkMeasurementPointEntity.toDomain(): NetworkMeasurementPoint {
                 timestamp = locationTimestamp ?: 0L
             )
         } else null,
-        indoorPosition = if (mapId != null && indoorX != null && indoorY != null) {
+        indoorPosition = if (indoorX != null && indoorY != null) {
             IndoorPosition(
-                mapId = mapId,
+                sessionId = sessionId,
                 x = indoorX,
-                y = indoorY
+                y = indoorY,
+                timestamp = indoorTimestamp ?: 0L
             )
         } else null,
         wifi = wifi?.toDomain(),
@@ -69,9 +70,9 @@ fun NetworkMeasurementPoint.toEntity(sessionId: String): NetworkMeasurementPoint
         longitude = location?.long,
         locationAccuracy = location?.accuracy,
         locationTimestamp = location?.timestamp,
-        mapId = indoorPosition?.mapId,
         indoorX = indoorPosition?.x,
         indoorY = indoorPosition?.y,
+        indoorTimestamp = indoorPosition?.timestamp,
         wifi = wifi?.toEntity(),
         cellular = cellular?.toEntity(),
         internet = internet?.toEntity()

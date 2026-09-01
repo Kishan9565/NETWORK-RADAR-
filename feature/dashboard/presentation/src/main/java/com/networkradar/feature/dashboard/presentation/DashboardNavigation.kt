@@ -10,14 +10,12 @@ data object DashboardRoute
 fun NavGraphBuilder.dashboardGraph(
     onNavigateToRadar: () -> Unit,
     onNavigateToHistory: () -> Unit,
-    onNavigateToMaps: () -> Unit,
     onNavigateToComparison: () -> Unit
 ) {
     composable<DashboardRoute> {
         DashboardRoot(
             onNavigateToRadar = onNavigateToRadar,
             onNavigateToHistory = onNavigateToHistory,
-            onNavigateToMaps = onNavigateToMaps,
             onNavigateToComparison = onNavigateToComparison
         )
     }

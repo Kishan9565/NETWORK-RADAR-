@@ -2,11 +2,11 @@ package com.networkradar.feature.radar.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.networkradar.core.domain.indoor.IndoorDataSource
-import com.networkradar.core.domain.indoor.IndoorMap
-import com.networkradar.core.domain.indoor.IndoorMapLocalDataSource
+import com.networkradar.core.domain.indoor.IndoorPosition
+import com.networkradar.core.domain.indoor.PdrDataSource
+import com.networkradar.core.domain.indoor.SpatialAnnotation
+import com.networkradar.core.domain.indoor.SpatialAnnotationLocalDataSource
 import com.networkradar.core.domain.measurement.ScanManager
-import com.networkradar.core.domain.measurement.ScanSession
 import com.networkradar.core.domain.util.Result
 import com.networkradar.core.domain.util.onFailure
 import com.networkradar.core.domain.util.onSuccess
@@ -26,14 +26,15 @@ import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 class RadarViewModel(
     private val observeRadarMeasurementsUseCase: ObserveRadarMeasurementsUseCase,
     private val analyzeScanUseCase: AnalyzeScanUseCase,
     private val runDownloadTestUseCase: RunDownloadTestUseCase,
     private val scanManager: ScanManager,
-    private val indoorDataSource: IndoorDataSource,
-    private val mapDataSource: IndoorMapLocalDataSource
+    private val pdrDataSource: PdrDataSource,
+    private val annotationDataSource: SpatialAnnotationLocalDataSource
 ) : ViewModel() {
 
     private val _analysisState = MutableStateFlow<AnalysisState>(AnalysisState.Idle)
@@ -41,6 +42,7 @@ class RadarViewModel(
     private val _downloadSpeed = MutableStateFlow<Double?>(null)
     private val _isTestingSpeed = MutableStateFlow(false)
     private val _permissionState = MutableStateFlow(PermissionState())
+    private val _spatialPath = MutableStateFlow<List<IndoorPosition>>(emptyList())
 
     // Shared measurement stream to avoid duplicate collection
     private val measurements = observeRadarMeasurementsUseCase()
@@ -55,14 +57,16 @@ class RadarViewModel(
             measurements,
             scanManager.activeSession,
             _isSpatialScan,
-            indoorDataSource.activeMap,
+            _spatialPath,
             _analysisState
-        ) { measurement, activeSession, isSpatial, activeMap, analysis ->
+        ) { measurement, activeSession, isSpatial, spatialPath, analysis ->
             RadarState(
                 measurement = measurement,
                 activeSession = activeSession,
                 isSpatialScan = isSpatial,
-                selectedMap = activeMap,
+                currentIndoorPosition = measurement.point.indoorPosition,
+                spatialPath = spatialPath,
+                isPdrAvailable = pdrDataSource.isAvailable,
                 intelligenceSummary = (analysis as? AnalysisState.Completed)?.summary,
                 analyzedSessionId = (analysis as? AnalysisState.Completed)?.sessionId,
                 isAnalyzing = analysis is AnalysisState.Loading
@@ -93,9 +97,16 @@ class RadarViewModel(
             .onEach { measurement ->
                 if (scanManager.activeSession.value != null) {
                     scanManager.recordMeasurement(measurement.point)
+                    
+                    // Accumulate path for spatial scan
+                    if (_isSpatialScan.value) {
+                        measurement.point.indoorPosition?.let { pos ->
+                            _spatialPath.update { it + pos }
+                        }
+                    }
                 }
                 
-                // Reactive permission check: if ObserveRadarMeasurementsUseCase reports PermissionRequired, update state
+                // Reactive permission check
                 val isGranted = measurement.locationStatus !is com.networkradar.core.domain.location.LocationObservation.PermissionRequired
                 if (_permissionState.value.isGranted != isGranted) {
                     _permissionState.update { it.copy(isGranted = isGranted) }
@@ -114,7 +125,8 @@ class RadarViewModel(
                 viewModelScope.launch {
                     _analysisState.value = AnalysisState.Idle
                     _isSpatialScan.value = false
-                    scanManager.startScan(action.name, null)
+                    _spatialPath.value = emptyList()
+                    scanManager.startScan(action.name, isSpatial = false)
                 }
             }
             is RadarAction.StartSpatialScan -> {
@@ -122,22 +134,27 @@ class RadarViewModel(
                     _permissionState.update { it.copy(showRationale = true) }
                     return
                 }
+                if (!pdrDataSource.isAvailable) {
+                    viewModelScope.launch {
+                        _events.send(RadarEvent.Error("Step tracking sensors are not available on this device."))
+                    }
+                    return
+                }
                 viewModelScope.launch {
                     _analysisState.value = AnalysisState.Idle
                     _isSpatialScan.value = true
+                    _spatialPath.value = emptyList()
                     
-                    val mapResult = mapDataSource.getMapById(action.mapId)
-                    if (mapResult is Result.Success && mapResult.data != null) {
-                        indoorDataSource.setActiveMap(mapResult.data)
-                        scanManager.startScan(action.name, action.mapId)
-                    } else {
-                         _events.send(RadarEvent.Error("Selected floor plan not found."))
+                    val result = scanManager.startScan(action.name, isSpatial = true)
+                    result.onSuccess { session ->
+                        pdrDataSource.startTracking(session.id)
                     }
                 }
             }
             RadarAction.StopScan -> {
                 viewModelScope.launch {
                     val sessionId = scanManager.activeSession.value?.id
+                    pdrDataSource.stopTracking()
                     scanManager.stopScan().onSuccess {
                         if (sessionId != null) {
                             performAnalysis(sessionId)
@@ -148,11 +165,28 @@ class RadarViewModel(
             RadarAction.RunSpeedTest -> {
                 runSpeedTest()
             }
+            RadarAction.RecalibratePosition -> {
+                pdrDataSource.resetOrigin()
+                _spatialPath.value = emptyList()
+            }
+            is RadarAction.MarkSpot -> {
+                val sessionId = scanManager.activeSession.value?.id ?: return
+                val currentPos = state.value.currentIndoorPosition ?: return
+                viewModelScope.launch {
+                    annotationDataSource.saveAnnotation(
+                        SpatialAnnotation(
+                            id = UUID.randomUUID().toString(),
+                            sessionId = sessionId,
+                            x = currentPos.x,
+                            y = currentPos.y,
+                            label = action.label,
+                            timestamp = System.currentTimeMillis()
+                        )
+                    )
+                }
+            }
             is RadarAction.PermissionResult -> {
                 _permissionState.update { it.copy(isGranted = action.granted, showRationale = false) }
-                if (!action.granted) {
-                    // Logic to show "Open Settings" button is handled in UI based on state
-                }
             }
             RadarAction.RequestPermission -> {
                 viewModelScope.launch {

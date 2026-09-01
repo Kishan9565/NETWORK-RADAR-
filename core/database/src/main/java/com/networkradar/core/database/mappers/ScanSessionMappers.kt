@@ -6,7 +6,7 @@ import com.networkradar.core.domain.measurement.ScanSession
 fun ScanSessionEntity.toDomain(): ScanSession {
     return ScanSession(
         id = id,
-        mapId = mapId,
+        isSpatial = isSpatial,
         name = name,
         startedAt = startedAt,
         endedAt = endedAt,
@@ -17,7 +17,7 @@ fun ScanSessionEntity.toDomain(): ScanSession {
 fun ScanSession.toEntity(): ScanSessionEntity {
     return ScanSessionEntity(
         id = id,
-        mapId = mapId,
+        isSpatial = isSpatial,
         name = name,
         startedAt = startedAt,
         endedAt = endedAt,

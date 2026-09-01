@@ -16,16 +16,16 @@ class ExportScanUseCase(
         return try {
             val points = pointDataSource.getMeasurementsForSession(sessionId).first()
             val csv = StringBuilder()
-            csv.append("timestamp,latitude,longitude,accuracy,mapId,indoorX,indoorY,downloadMbps,uploadMbps,latencyMs,wifiRssi,wifiSsid,cellType,cellRsrp\n")
+            csv.append("timestamp,latitude,longitude,accuracy,indoorX,indoorY,indoorTimestamp,downloadMbps,uploadMbps,latencyMs,wifiRssi,wifiSsid,cellType,cellRsrp\n")
             
             points.forEach { p ->
                 csv.append("${p.timestamp},")
                 csv.append("${p.location?.lat ?: ""},")
                 csv.append("${p.location?.long ?: ""},")
                 csv.append("${p.location?.accuracy ?: ""},")
-                csv.append("${p.indoorPosition?.mapId ?: ""},")
                 csv.append("${p.indoorPosition?.x ?: ""},")
                 csv.append("${p.indoorPosition?.y ?: ""},")
+                csv.append("${p.indoorPosition?.timestamp ?: ""},")
                 csv.append("${p.internet?.downloadMbps ?: ""},")
                 csv.append("${p.internet?.uploadMbps ?: ""},")
                 csv.append("${p.internet?.latencyMs ?: ""},")

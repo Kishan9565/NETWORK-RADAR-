@@ -2,8 +2,6 @@ package com.networkradar.core.database.mappers
 
 import assertk.assertThat
 import assertk.assertions.isEqualTo
-import assertk.assertions.isNotNull
-import com.networkradar.core.domain.indoor.IndoorMap
 import com.networkradar.core.domain.indoor.IndoorPosition
 import com.networkradar.core.domain.location.Location
 import com.networkradar.core.domain.measurement.CellularMeasurement
@@ -16,17 +14,8 @@ import org.junit.jupiter.api.Test
 class MappersTest {
 
     @Test
-    fun `IndoorMap mapping works`() {
-        val domain = IndoorMap("id", "name", 10f, 20f, 123L)
-        val entity = domain.toEntity()
-        val mappedBack = entity.toDomain()
-
-        assertThat(mappedBack).isEqualTo(domain)
-    }
-
-    @Test
     fun `ScanSession mapping works`() {
-        val domain = ScanSession("id", "mapId", "name", 123L, 456L, 10)
+        val domain = ScanSession("id", true, "name", 123L, 456L, 10)
         val entity = domain.toEntity()
         val mappedBack = entity.toDomain()
 
@@ -38,7 +27,7 @@ class MappersTest {
         val domain = NetworkMeasurementPoint(
             id = 1L,
             location = Location(1.0, 2.0, 3f, 4L),
-            indoorPosition = IndoorPosition("mapId", 5f, 6f),
+            indoorPosition = IndoorPosition("sessionId", 5f, 6f, 12L),
             wifi = WifiMeasurement(-50, "SSID", 2400, 100, 7L),
             cellular = CellularMeasurement("LTE", -100, -10, 15, -90, 8L),
             internet = InternetMeasurement(20.0, 100.0, 50.0, 9L),
@@ -56,7 +45,7 @@ class MappersTest {
     @Test
     fun `NetworkMeasurementPoint nullable mapping works`() {
         val domain = NetworkMeasurementPoint(
-            id = 0L, // Entity defaults to 0 if null domain id
+            id = 0L,
             location = null,
             indoorPosition = null,
             wifi = null,

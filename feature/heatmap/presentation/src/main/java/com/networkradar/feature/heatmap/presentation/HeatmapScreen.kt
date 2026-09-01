@@ -2,6 +2,7 @@ package com.networkradar.feature.heatmap.presentation
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
@@ -96,11 +97,11 @@ fun HeatmapScreen(
                             icon = Icons.Default.Info
                         )
                     }
-                    state.activeMap != null && (state.heatmapCells.isNotEmpty() || state.sourcePoints.isNotEmpty()) -> {
+                    state.heatmapCells.isNotEmpty() || state.sourcePoints.isNotEmpty() -> {
                         HeatmapCanvas(
-                            indoorMap = state.activeMap,
                             cells = state.heatmapCells,
                             sourcePoints = state.sourcePoints,
+                            annotations = state.annotations,
                             metric = state.selectedMetric,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -215,19 +216,35 @@ private fun HeatmapLegend(
             
             Spacer(modifier = Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .background(Color.White, shape = MaterialTheme.shapes.small)
-                        .padding(1.dp)
-                        .background(Color.Black, shape = MaterialTheme.shapes.small)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "● Real Measurement Point",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(Color.White, shape = MaterialTheme.shapes.small)
+                            .padding(1.dp)
+                            .background(Color.Black, shape = MaterialTheme.shapes.small)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Measurement",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(Color.Red, shape = CircleShape)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Marked Spot",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }

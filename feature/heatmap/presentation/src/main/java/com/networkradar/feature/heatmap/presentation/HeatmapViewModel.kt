@@ -2,24 +2,23 @@ package com.networkradar.feature.heatmap.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.networkradar.core.domain.indoor.IndoorMapLocalDataSource
+import com.networkradar.core.domain.indoor.SpatialAnnotationLocalDataSource
 import com.networkradar.core.domain.measurement.ScanSessionLocalDataSource
 import com.networkradar.core.domain.util.Result
 import com.networkradar.feature.heatmap.domain.GenerateHeatmapUseCase
 import com.networkradar.feature.heatmap.domain.HeatmapMetric
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class HeatmapViewModel(
     private val sessionDataSource: ScanSessionLocalDataSource,
-    private val mapDataSource: IndoorMapLocalDataSource,
+    private val annotationDataSource: SpatialAnnotationLocalDataSource,
     private val generateHeatmapUseCase: GenerateHeatmapUseCase
 ) : ViewModel() {
 
@@ -37,7 +36,7 @@ class HeatmapViewModel(
             }
             is HeatmapAction.LoadSession -> {
                 _state.update { it.copy(selectedSessionId = action.sessionId) }
-                loadSessionAndMap(action.sessionId)
+                loadSession(action.sessionId)
             }
             HeatmapAction.Refresh -> {
                 generateHeatmap()
@@ -45,9 +44,9 @@ class HeatmapViewModel(
         }
     }
 
-    private fun loadSessionAndMap(sessionId: String) {
+    private fun loadSession(sessionId: String) {
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, error = null, activeMap = null) }
+            _state.update { it.copy(isLoading = true, error = null) }
 
             val sessionResult = sessionDataSource.getSessionById(sessionId)
             if (sessionResult is Result.Error) {
@@ -61,41 +60,30 @@ class HeatmapViewModel(
                 return@launch
             }
 
-            if (session.mapId == null) {
-                _state.update { it.copy(isLoading = false, error = "This scan was not recorded on a floor plan.") }
+            if (!session.isSpatial) {
+                _state.update { it.copy(isLoading = false, error = "This was a Quick Scan — no spatial data to map.") }
                 return@launch
             }
 
-            val mapResult = mapDataSource.getMapById(session.mapId!!)
-            if (mapResult is Result.Error) {
-                _state.update { it.copy(isLoading = false, error = "Failed to load floor plan.") }
-                return@launch
-            }
+            // Load annotations
+            val annotations = annotationDataSource.getAnnotationsForSession(sessionId).first()
+            _state.update { it.copy(annotations = annotations) }
 
-            val map = (mapResult as Result.Success).data
-            if (map == null) {
-                _state.update { it.copy(isLoading = false, error = "The floor plan used by this scan is no longer available.") }
-                return@launch
-            }
-
-            _state.update { it.copy(activeMap = map) }
             generateHeatmap()
         }
     }
 
     private fun generateHeatmap() {
         val currentState = _state.value
-        val map = currentState.activeMap
         val sessionId = currentState.selectedSessionId
 
-        if (map == null || sessionId == null) return
+        if (sessionId == null) return
 
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
             
             val result = generateHeatmapUseCase(
                 sessionId = sessionId,
-                map = map,
                 metric = currentState.selectedMetric
             )
 
@@ -105,7 +93,7 @@ class HeatmapViewModel(
                     if (cells.isEmpty() && result.data.sourcePoints.isEmpty()) {
                          _state.update { it.copy(
                             isLoading = false,
-                            error = "No spatial measurements were recorded."
+                            error = "Not enough movement recorded to build a heatmap."
                         ) }
                         return@launch
                     }

@@ -1,7 +1,7 @@
 package com.networkradar.core.data.di
 
 import com.google.android.gms.location.LocationServices
-import com.networkradar.core.data.indoor.InMemoryIndoorDataSource
+import com.networkradar.core.data.indoor.AndroidPdrDataSource
 import com.networkradar.core.data.location.AndroidLocationDataSource
 import com.networkradar.core.data.measurement.RealScanManager
 import com.networkradar.core.data.networking.AndroidCellularDataSource
@@ -12,7 +12,7 @@ import com.networkradar.core.data.networking.KtorDownloadMeasurementDataSource
 import com.networkradar.core.data.networking.KtorInternetLatencyDataSource
 import com.networkradar.core.data.networking.KtorUploadMeasurementDataSource
 import com.networkradar.core.data.prefs.DataStoreFactory
-import com.networkradar.core.domain.indoor.IndoorDataSource
+import com.networkradar.core.domain.indoor.PdrDataSource
 import com.networkradar.core.domain.location.LocationDataSource
 import com.networkradar.core.domain.measurement.CellularDataSource
 import com.networkradar.core.domain.measurement.ConnectivityDataSource
@@ -44,6 +44,6 @@ val coreDataModule = module {
     singleOf(::KtorInternetLatencyDataSource) bind InternetLatencyDataSource::class
     singleOf(::KtorDownloadMeasurementDataSource) bind DownloadMeasurementDataSource::class
     singleOf(::KtorUploadMeasurementDataSource) bind UploadMeasurementDataSource::class
-    singleOf(::InMemoryIndoorDataSource) bind IndoorDataSource::class
+    singleOf(::AndroidPdrDataSource) bind PdrDataSource::class
     singleOf(::RealScanManager) bind ScanManager::class
 }

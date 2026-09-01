@@ -1,9 +1,6 @@
 package com.networkradar.core.domain.indoor
 
+// Obsolete. No longer needed as positioning is automatic (PDR) and relative.
 object IndoorPositionValidator {
-    fun validate(position: IndoorPosition, map: IndoorMap): Boolean {
-        return position.mapId == map.id &&
-                position.x in 0f..map.width &&
-                position.y in 0f..map.height
-    }
+    // Removed validation logic that depended on fixed map boundaries.
 }

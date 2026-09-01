@@ -4,13 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.networkradar.core.domain.measurement.ScanSessionLocalDataSource
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class DashboardViewModel(
@@ -42,11 +39,6 @@ class DashboardViewModel(
             DashboardAction.ViewHistory -> {
                 viewModelScope.launch {
                     _events.send(DashboardEvent.NavigateToHistory)
-                }
-            }
-            DashboardAction.ManageMaps -> {
-                viewModelScope.launch {
-                    _events.send(DashboardEvent.NavigateToMaps)
                 }
             }
             DashboardAction.CompareScans -> {

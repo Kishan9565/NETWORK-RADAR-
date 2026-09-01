@@ -146,7 +146,7 @@ private fun HistoryItem(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = if (scan.mapId != null) "Spatial Scan" else "Quick Scan",
+                    text = if (scan.isSpatial) "Spatial Scan" else "Quick Scan",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary
                 )

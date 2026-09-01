@@ -43,10 +43,6 @@ include(":feature:speedtest:domain")
 include(":feature:speedtest:data")
 include(":feature:speedtest:presentation")
 
-include(":feature:map:domain")
-include(":feature:map:data")
-include(":feature:map:presentation")
-
 include(":feature:heatmap:domain")
 include(":feature:heatmap:data")
 include(":feature:heatmap:presentation")

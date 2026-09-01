@@ -30,9 +30,9 @@ data class NetworkMeasurementPointEntity(
     val locationTimestamp: Long?,
 
     // Indoor Position
-    val mapId: String?,
     val indoorX: Float?,
     val indoorY: Float?,
+    val indoorTimestamp: Long?,
 
     // Wifi
     @Embedded(prefix = "wifi_") val wifi: WifiMeasurementEntity?,

@@ -7,19 +7,28 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CellTower
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.PinDrop
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -30,20 +39,22 @@ import com.networkradar.core.designsystem.SignalFair
 import com.networkradar.core.designsystem.SignalGood
 import com.networkradar.core.designsystem.SignalPoor
 import com.networkradar.core.designsystem.SignalUnavailable
+import com.networkradar.core.domain.indoor.IndoorPosition
 import com.networkradar.core.domain.location.LocationObservation
 import com.networkradar.core.domain.measurement.*
 import com.networkradar.core.presentation.util.ObserveAsEvents
 import com.networkradar.feature.radar.domain.RadarMeasurement
 import org.koin.androidx.compose.koinViewModel
+import kotlin.math.abs
 
 @Composable
 fun RadarRoot(
     onViewHeatmap: (String) -> Unit,
-    onNavigateToMapSelection: () -> Unit,
     viewModel: RadarViewModel = koinViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var showMarkSpotDialog by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -76,13 +87,23 @@ fun RadarRoot(
         state = state,
         onAction = viewModel::onAction,
         onViewHeatmap = onViewHeatmap,
-        onNavigateToMapSelection = onNavigateToMapSelection
+        onMarkSpotClick = { showMarkSpotDialog = true }
     )
     
     if (state.showPermissionRationale) {
         PermissionRationaleDialog(
             onConfirm = { viewModel.onAction(RadarAction.RequestPermission) },
             onDismiss = { viewModel.onAction(RadarAction.DismissRationale) }
+        )
+    }
+
+    if (showMarkSpotDialog) {
+        MarkSpotDialog(
+            onConfirm = { label ->
+                viewModel.onAction(RadarAction.MarkSpot(label))
+                showMarkSpotDialog = false
+            },
+            onDismiss = { showMarkSpotDialog = false }
         )
     }
 }
@@ -93,7 +114,7 @@ fun RadarScreen(
     state: RadarState,
     onAction: (RadarAction) -> Unit,
     onViewHeatmap: (String) -> Unit,
-    onNavigateToMapSelection: () -> Unit
+    onMarkSpotClick: () -> Unit
 ) {
     val measurement = state.measurement
     val activeSession = state.activeSession
@@ -122,22 +143,22 @@ fun RadarScreen(
 
             if (activeSession == null) {
                 ScanModeSelection(
-                    selectedMapName = state.selectedMap?.name,
                     onStartQuickScan = { onAction(RadarAction.StartQuickScan("Quick Scan ${System.currentTimeMillis()}")) },
-                    onStartSpatialScan = { 
-                        state.selectedMap?.let {
-                            onAction(RadarAction.StartSpatialScan("Spatial Scan ${System.currentTimeMillis()}", it.id))
-                        } ?: onNavigateToMapSelection()
-                    },
-                    onSelectMap = onNavigateToMapSelection
+                    onStartSpatialScan = { onAction(RadarAction.StartSpatialScan("Spatial Scan ${System.currentTimeMillis()}")) }
                 )
             } else {
                 ActiveScanHeader(
                     activeSession = activeSession,
                     isSpatial = state.isSpatialScan,
-                    mapName = state.selectedMap?.name,
-                    onStopScan = { onAction(RadarAction.StopScan) }
+                    onStopScan = { onAction(RadarAction.StopScan) },
+                    onRecalibrate = { onAction(RadarAction.RecalibratePosition) },
+                    onMarkSpot = onMarkSpotClick
                 )
+                
+                if (state.isSpatialScan) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    PdrPathView(path = state.spatialPath, currentPos = state.currentIndoorPosition)
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -187,55 +208,107 @@ fun RadarScreen(
 }
 
 @Composable
-private fun PermissionRationaleDialog(
-    onConfirm: () -> Unit,
+private fun MarkSpotDialog(
+    onConfirm: (String?) -> Unit,
     onDismiss: () -> Unit
 ) {
+    var label by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Location Access Required") },
+        title = { Text("Mark this spot") },
         text = {
-            Text("Network Radar needs location access to measure Wi-Fi and GPS signal quality at your position. This is required by Android to perform network scans.")
+            OutlinedTextField(
+                value = label,
+                onValueChange = { label = it },
+                label = { Text("Label (e.g. Living Room)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
         },
         confirmButton = {
-            Button(onClick = onConfirm) {
-                Text("Allow Access")
+            Button(onClick = { onConfirm(label.takeIf { it.isNotBlank() }) }) {
+                Text("Save Marker")
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Later")
+                Text("Cancel")
             }
         }
     )
 }
 
 @Composable
-private fun PermissionDeniedBanner(
-    onRequestPermission: () -> Unit
-) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-        modifier = Modifier.fillMaxWidth()
-    ) {
+private fun PdrPathView(path: List<IndoorPosition>, currentPos: IndoorPosition?) {
+    Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Location Permission Required",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onErrorContainer
-            )
-            Text(
-                text = "To measure signal quality, please grant location access.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer
+                text = "Approximate Path (Relative)", 
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(8.dp))
-            Button(
-                onClick = onRequestPermission,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.small)
+                    .padding(8.dp)
             ) {
-                Text("Grant Permission")
+                if (path.isNotEmpty() || currentPos != null) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val allPoints = if (currentPos != null) path + currentPos else path
+                        if (allPoints.isEmpty()) return@Canvas
+                        
+                        val minX = allPoints.minOf { it.x }
+                        val maxX = allPoints.maxOf { it.x }
+                        val minY = allPoints.minOf { it.y }
+                        val maxY = allPoints.maxOf { it.y }
+                        
+                        val rangeX = abs(maxX - minX).coerceAtLeast(10f)
+                        val rangeY = abs(maxY - minY).coerceAtLeast(10f)
+                        
+                        val scale = minOf(size.width / rangeX, size.height / rangeY) * 0.8f
+                        
+                        val offsetX = (size.width - rangeX * scale) / 2f - minX * scale
+                        val offsetY = (size.height - rangeY * scale) / 2f - minY * scale
+                        
+                        // Draw path
+                        if (allPoints.size > 1) {
+                            val drawPath = Path().apply {
+                                val start = allPoints.first()
+                                moveTo(start.x * scale + offsetX, start.y * scale + offsetY)
+                                for (i in 1 until allPoints.size) {
+                                    val p = allPoints[i]
+                                    lineTo(p.x * scale + offsetX, p.y * scale + offsetY)
+                                }
+                            }
+                            drawPath(drawPath, color = Color.Gray, style = Stroke(width = 2.dp.toPx()))
+                        }
+                        
+                        // Draw current position
+                        currentPos?.let {
+                            drawCircle(
+                                color = Color.Blue,
+                                radius = 6.dp.toPx(),
+                                center = Offset(it.x * scale + offsetX, it.y * scale + offsetY)
+                            )
+                        }
+                        
+                        // Draw start point
+                        val start = allPoints.first()
+                        drawCircle(
+                            color = Color.Green,
+                            radius = 4.dp.toPx(),
+                            center = Offset(start.x * scale + offsetX, start.y * scale + offsetY)
+                        )
+                    }
+                } else {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Start walking to track path", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
             }
         }
     }
@@ -243,10 +316,8 @@ private fun PermissionDeniedBanner(
 
 @Composable
 private fun ScanModeSelection(
-    selectedMapName: String?,
     onStartQuickScan: () -> Unit,
-    onStartSpatialScan: () -> Unit,
-    onSelectMap: () -> Unit
+    onStartSpatialScan: () -> Unit
 ) {
     Column(modifier = Modifier.padding(vertical = 16.dp)) {
         Text(text = "SELECT SCAN MODE", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
@@ -258,7 +329,7 @@ private fun ScanModeSelection(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Quick Scan", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text("Instant measurement of RF and Internet quality at your current position. No map required.", style = MaterialTheme.typography.bodyMedium)
+                Text("Instant measurement of RF and Internet quality at your current position.", style = MaterialTheme.typography.bodyMedium)
             }
         }
         
@@ -267,27 +338,11 @@ private fun ScanModeSelection(
         Card(
             onClick = onStartSpatialScan,
             modifier = Modifier.fillMaxWidth(),
-            colors = if (selectedMapName != null) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer) 
-                     else CardDefaults.cardColors()
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Spatial Scan", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    if (selectedMapName != null) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Badge { Text("READY") }
-                    }
-                }
-                Text("Map RF quality across a floor plan. Move around to create a heatmap.", style = MaterialTheme.typography.bodyMedium)
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedButton(
-                    onClick = onSelectMap,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.LocationOn, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(selectedMapName ?: "SELECT FLOOR PLAN")
-                }
+                Text("Spatial Scan (PDR)", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Automatic indoor tracking using phone sensors. No manual setup required.", style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
@@ -297,8 +352,9 @@ private fun ScanModeSelection(
 private fun ActiveScanHeader(
     activeSession: ScanSession,
     isSpatial: Boolean,
-    mapName: String?,
-    onStopScan: () -> Unit
+    onStopScan: () -> Unit,
+    onRecalibrate: () -> Unit,
+    onMarkSpot: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -325,10 +381,31 @@ private fun ActiveScanHeader(
                     Text("STOP")
                 }
             }
-            if (isSpatial && mapName != null) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(text = "Mapping: $mapName", style = MaterialTheme.typography.bodySmall)
+            
+            if (isSpatial) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = onRecalibrate,
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Recalibrate", style = MaterialTheme.typography.labelMedium)
+                    }
+                    OutlinedButton(
+                        onClick = onMarkSpot,
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Icon(Icons.Default.PinDrop, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Mark Spot", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
             }
+            
             Spacer(modifier = Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -534,8 +611,8 @@ private fun LocationView(measurement: RadarMeasurement, isSpatial: Boolean) {
                 val indoor = measurement.point.indoorPosition
                 if (indoor != null) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        InfoItem("Indoor X", "${"%.2f".format(indoor.x)} m")
-                        InfoItem("Indoor Y", "${"%.2f".format(indoor.y)} m")
+                        InfoItem("Relative X", "${"%.2f".format(indoor.x)} m")
+                        InfoItem("Relative Y", "${"%.2f".format(indoor.y)} m")
                     }
                 } else {
                     Text("Acquiring indoor position...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
@@ -603,14 +680,14 @@ private fun IntelligenceSummaryView(
 
         Spacer(modifier = Modifier.height(12.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            RankedSpotCard("BEST SPOT", summary.bestSpot, MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.weight(1f))
-            RankedSpotCard("WEAKEST SPOT", summary.worstSpot, MaterialTheme.colorScheme.errorContainer, modifier = Modifier.weight(1f))
+            RankedSpotCard("BEST SPOT", spot = summary.bestSpot, containerColor = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.weight(1f))
+            RankedSpotCard("WEAKEST SPOT", spot = summary.worstSpot, containerColor = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.weight(1f))
         }
     }
 }
 
 @Composable
-private fun RankedSpotCard(label: String, spot: RankedSpot?, containerColor: androidx.compose.ui.graphics.Color, modifier: Modifier = Modifier) {
+private fun RankedSpotCard(label: String, spot: RankedSpot?, containerColor: Color, modifier: Modifier = Modifier) {
     Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = containerColor)) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(text = label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
@@ -637,5 +714,60 @@ private fun InfoItem(label: String, value: String) {
     Column(modifier = Modifier.padding(vertical = 4.dp)) {
         Text(text = label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(text = value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun PermissionRationaleDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Location Access Required") },
+        text = {
+            Text("Network Radar needs location access to measure Wi-Fi and GPS signal quality at your position. This is required by Android to perform network scans.")
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text("Allow Access")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Later")
+            }
+        }
+    )
+}
+
+@Composable
+private fun PermissionDeniedBanner(
+    onRequestPermission: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Location Permission Required",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Text(
+                text = "To measure signal quality, please grant location access.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = onRequestPermission,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
+                Text("Grant Permission")
+            }
+        }
     }
 }

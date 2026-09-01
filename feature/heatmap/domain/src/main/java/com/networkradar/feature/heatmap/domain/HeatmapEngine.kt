@@ -1,31 +1,35 @@
 package com.networkradar.feature.heatmap.domain
 
+import kotlin.math.floor
 import kotlin.math.pow
 import kotlin.math.sqrt
 
 object HeatmapEngine {
 
     fun generateGrid(
-        width: Float,
-        height: Float,
         points: List<WeightedPoint>,
         config: HeatmapConfig
     ): List<HeatmapCell> {
         if (points.isEmpty()) return emptyList()
 
-        val cells = mutableListOf<HeatmapCell>()
-        val xSteps = (width / config.cellSize).toInt()
-        val ySteps = (height / config.cellSize).toInt()
+        val minX = points.minOf { it.x } - config.padding
+        val maxX = points.maxOf { it.x } + config.padding
+        val minY = points.minOf { it.y } - config.padding
+        val maxY = points.maxOf { it.y } + config.padding
 
-        for (i in 0..xSteps) {
-            for (j in 0..ySteps) {
-                val x = i * config.cellSize
-                val y = j * config.cellSize
-                
+        val cells = mutableListOf<HeatmapCell>()
+        
+        var x = minX
+        while (x <= maxX) {
+            var y = minY
+            while (y <= maxY) {
                 val (value, density) = calculateIdw(x, y, points, config)
                 cells.add(HeatmapCell(x, y, value, density))
+                y += config.cellSize
             }
+            x += config.cellSize
         }
+        
         return cells
     }
 
@@ -74,6 +78,7 @@ object HeatmapEngine {
         val cellSize: Float = 1.0f,
         val power: Double = 2.0,
         val maxRadius: Double = 10.0,
-        val minPoints: Int = 1
+        val minPoints: Int = 1,
+        val padding: Float = 2.0f
     )
 }

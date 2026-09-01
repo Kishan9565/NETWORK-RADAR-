@@ -7,7 +7,6 @@ import com.networkradar.feature.comparison.presentation.di.comparisonPresentatio
 import com.networkradar.feature.dashboard.presentation.di.dashboardPresentationModule
 import com.networkradar.feature.heatmap.presentation.di.heatmapPresentationModule
 import com.networkradar.feature.history.presentation.di.historyPresentationModule
-import com.networkradar.feature.map.presentation.di.mapPresentationModule
 import com.networkradar.feature.radar.presentation.di.radarPresentationModule
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
@@ -25,7 +24,6 @@ class NetworkRadarApp : Application() {
                 coreDatabaseModule,
                 dashboardPresentationModule,
                 radarPresentationModule,
-                mapPresentationModule,
                 heatmapPresentationModule,
                 historyPresentationModule,
                 comparisonPresentationModule

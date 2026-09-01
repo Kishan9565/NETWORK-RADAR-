@@ -1,14 +1,14 @@
 package com.networkradar.feature.heatmap.presentation
 
-import com.networkradar.core.domain.indoor.IndoorMap
+import com.networkradar.core.domain.indoor.SpatialAnnotation
 import com.networkradar.feature.heatmap.domain.HeatmapCell
 import com.networkradar.feature.heatmap.domain.HeatmapEngine
 import com.networkradar.feature.heatmap.domain.HeatmapMetric
 
 data class HeatmapState(
-    val activeMap: IndoorMap? = null,
     val heatmapCells: List<HeatmapCell> = emptyList(),
     val sourcePoints: List<HeatmapEngine.WeightedPoint> = emptyList(),
+    val annotations: List<SpatialAnnotation> = emptyList(),
     val selectedMetric: HeatmapMetric = HeatmapMetric.DOWNLOAD,
     val selectedSessionId: String? = null,
     val isLoading: Boolean = false,

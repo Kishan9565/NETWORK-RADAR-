@@ -31,11 +31,12 @@ abstract class NetworkRadarDatabase : RoomDatabase() {
                 // 1. Drop the old indoor_maps table
                 db.execSQL("DROP TABLE IF EXISTS indoor_maps")
 
-                // 2. Update scan_sessions table: remove mapId, add isSpatial
-                // Room doesn't support dropping columns easily in older SQLite versions, 
-                // but we can create a new table and migrate data.
+                // 2. Update scan_sessions table
+                // Rename old table
+                db.execSQL("ALTER TABLE scan_sessions RENAME TO scan_sessions_old")
+                // Create new table
                 db.execSQL("""
-                    CREATE TABLE scan_sessions_new (
+                    CREATE TABLE scan_sessions (
                         id TEXT NOT NULL PRIMARY KEY,
                         isSpatial INTEGER NOT NULL DEFAULT 0,
                         name TEXT NOT NULL,
@@ -44,19 +45,21 @@ abstract class NetworkRadarDatabase : RoomDatabase() {
                         measurementCount INTEGER NOT NULL
                     )
                 """.trimIndent())
-                
+                // Migrate data
                 db.execSQL("""
-                    INSERT INTO scan_sessions_new (id, isSpatial, name, startedAt, endedAt, measurementCount)
+                    INSERT INTO scan_sessions (id, isSpatial, name, startedAt, endedAt, measurementCount)
                     SELECT id, (CASE WHEN mapId IS NOT NULL THEN 1 ELSE 0 END), name, startedAt, endedAt, measurementCount
-                    FROM scan_sessions
+                    FROM scan_sessions_old
                 """.trimIndent())
-                
-                db.execSQL("DROP TABLE scan_sessions")
-                db.execSQL("ALTER TABLE scan_sessions_new RENAME TO scan_sessions")
+                // Drop old table
+                db.execSQL("DROP TABLE scan_sessions_old")
 
-                // 3. Update measurement_points table: remove mapId, add indoorTimestamp
+                // 3. Update measurement_points table
+                // Rename old table
+                db.execSQL("ALTER TABLE measurement_points RENAME TO measurement_points_old")
+                // Create new table
                 db.execSQL("""
-                    CREATE TABLE measurement_points_new (
+                    CREATE TABLE measurement_points (
                         id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
                         sessionId TEXT NOT NULL,
                         timestamp INTEGER NOT NULL,
@@ -71,25 +74,24 @@ abstract class NetworkRadarDatabase : RoomDatabase() {
                         wifi_ssid TEXT,
                         wifi_frequency INTEGER,
                         wifi_linkSpeed INTEGER,
-                        wifi_timestamp INTEGER NOT NULL,
+                        wifi_timestamp INTEGER,
                         cell_networkType TEXT,
                         cell_rsrp INTEGER,
                         cell_rsrq INTEGER,
                         cell_sinr INTEGER,
                         cell_rssi INTEGER,
-                        cell_timestamp INTEGER NOT NULL,
+                        cell_timestamp INTEGER,
                         net_latencyMs REAL,
                         net_downloadMbps REAL,
                         net_uploadMbps REAL,
-                        net_timestamp INTEGER NOT NULL,
+                        net_timestamp INTEGER,
                         FOREIGN KEY(sessionId) REFERENCES scan_sessions(id) ON UPDATE NO ACTION ON DELETE CASCADE
                     )
                 """.trimIndent())
                 
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_measurement_points_sessionId ON measurement_points_new(sessionId)")
-
+                // Migrate data
                 db.execSQL("""
-                    INSERT INTO measurement_points_new (
+                    INSERT INTO measurement_points (
                         id, sessionId, timestamp, latitude, longitude, locationAccuracy, locationTimestamp,
                         indoorX, indoorY, indoorTimestamp,
                         wifi_rssi, wifi_ssid, wifi_frequency, wifi_linkSpeed, wifi_timestamp,
@@ -102,11 +104,14 @@ abstract class NetworkRadarDatabase : RoomDatabase() {
                         wifi_rssi, wifi_ssid, wifi_frequency, wifi_linkSpeed, wifi_timestamp,
                         cell_networkType, cell_rsrp, cell_rsrq, cell_sinr, cell_rssi, cell_timestamp,
                         net_latencyMs, net_downloadMbps, net_uploadMbps, net_timestamp
-                    FROM measurement_points
+                    FROM measurement_points_old
                 """.trimIndent())
-
-                db.execSQL("DROP TABLE measurement_points")
-                db.execSQL("ALTER TABLE measurement_points_new RENAME TO measurement_points")
+                
+                // Drop old table
+                db.execSQL("DROP TABLE measurement_points_old")
+                
+                // Create Index AFTER the table is named correctly
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_measurement_points_sessionId ON measurement_points(sessionId)")
 
                 // 4. Create spatial_annotations table
                 db.execSQL("""

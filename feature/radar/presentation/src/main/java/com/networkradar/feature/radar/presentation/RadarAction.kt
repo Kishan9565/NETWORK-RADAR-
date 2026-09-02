@@ -7,7 +7,7 @@ sealed interface RadarAction {
     data object RunSpeedTest : RadarAction
     data object RecalibratePosition : RadarAction
     data class MarkSpot(val label: String?) : RadarAction
-    data class PermissionResult(val granted: Boolean) : RadarAction
+    data class PermissionResult(val results: Map<String, Boolean>) : RadarAction
     data object RequestPermission : RadarAction
     data object DismissRationale : RadarAction
 }

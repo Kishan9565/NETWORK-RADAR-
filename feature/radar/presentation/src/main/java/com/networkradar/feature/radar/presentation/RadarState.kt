@@ -18,5 +18,6 @@ data class RadarState(
     val downloadSpeedMbps: Double? = null,
     val isTestingSpeed: Boolean = false,
     val isLocationPermissionGranted: Boolean = true,
+    val isActivityPermissionGranted: Boolean = true,
     val showPermissionRationale: Boolean = false
 )

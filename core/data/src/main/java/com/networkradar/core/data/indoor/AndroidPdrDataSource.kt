@@ -1,10 +1,14 @@
 package com.networkradar.core.data.indoor
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.Build
+import androidx.core.content.ContextCompat
 import com.networkradar.core.domain.indoor.IndoorPosition
 import com.networkradar.core.domain.indoor.PdrDataSource
 import kotlinx.coroutines.channels.awaitClose
@@ -17,14 +21,28 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 class AndroidPdrDataSource(
-    context: Context
+    private val context: Context
 ) : PdrDataSource {
 
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val stepDetector = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
     private val rotationVector = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
 
-    override val isAvailable: Boolean = stepDetector != null && rotationVector != null
+    override val isHardwareAvailable: Boolean = stepDetector != null && rotationVector != null
+
+    override val isAvailable: Boolean 
+        get() = isHardwareAvailable && hasPermission()
+
+    private fun hasPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ContextCompat.checkSelfPermission(
+                context, 
+                Manifest.permission.ACTIVITY_RECOGNITION
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+    }
 
     private val trackingSessionId = MutableStateFlow<String?>(null)
     
@@ -33,9 +51,9 @@ class AndroidPdrDataSource(
     private var currentHeading = 0f
     private val stepLength = 0.75f // Default meters
 
-    override val currentPosition: Flow<IndoorPosition> = trackingSessionId.flatMapLatest { sessionId ->
+    override val currentPosition: Flow<IndoorPosition?> = trackingSessionId.flatMapLatest { sessionId ->
         if (sessionId == null) {
-            flowOf()
+            flowOf(null)
         } else {
             callbackFlow {
                 val sensorListener = object : SensorEventListener {
@@ -68,7 +86,7 @@ class AndroidPdrDataSource(
                     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
                 }
 
-                if (isAvailable) {
+                if (isHardwareAvailable && hasPermission()) {
                     sensorManager.registerListener(sensorListener, stepDetector, SensorManager.SENSOR_DELAY_FASTEST)
                     sensorManager.registerListener(sensorListener, rotationVector, SensorManager.SENSOR_DELAY_FASTEST)
                 }

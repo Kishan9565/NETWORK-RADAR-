@@ -35,7 +35,7 @@ class ObserveRadarMeasurementsUseCaseTest {
     private val pdrDataSource = mockk<PdrDataSource>()
 
     private val defaultConnectivity = ConnectivityState(true, NetworkType.WIFI, true)
-    private val indoorPositionFlow = MutableStateFlow<IndoorPosition>(IndoorPosition("", 0f, 0f, 0L))
+    private val indoorPositionFlow = MutableStateFlow<IndoorPosition?>(null)
 
     @BeforeEach
     fun setUp() {
@@ -78,6 +78,23 @@ class ObserveRadarMeasurementsUseCaseTest {
         val location = Location(50.0, 10.0, 5.0f, currentTime)
         val indoorPos = IndoorPosition("session_1", 5f, 5f, 0L)
         indoorPositionFlow.value = indoorPos
+
+        every { connectivityDataSource.getConnectivityState() } returns flowOf(defaultConnectivity)
+        every { wifiDataSource.getWifiMeasurement() } returns flowOf(null)
+        every { cellularDataSource.getCellularMeasurement() } returns flowOf(null)
+        every { locationDataSource.getLocationUpdates() } returns flowOf(LocationObservation.Success(location))
+
+        useCase().test {
+            val item = awaitItem()
+            assertThat(item.point.indoorPosition).isNull()
+        }
+    }
+
+    @Test
+    fun `when indoor position is null, measurement point is still emitted`() = runTest {
+        val currentTime = System.currentTimeMillis()
+        val location = Location(50.0, 10.0, 5.0f, currentTime)
+        indoorPositionFlow.value = null
 
         every { connectivityDataSource.getConnectivityState() } returns flowOf(defaultConnectivity)
         every { wifiDataSource.getWifiMeasurement() } returns flowOf(null)

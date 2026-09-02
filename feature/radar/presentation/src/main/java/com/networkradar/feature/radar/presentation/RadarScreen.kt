@@ -3,6 +3,7 @@ package com.networkradar.feature.radar.presentation
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -34,6 +35,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
 import com.networkradar.core.designsystem.SignalExcellent
 import com.networkradar.core.designsystem.SignalFair
 import com.networkradar.core.designsystem.SignalGood
@@ -44,6 +46,7 @@ import com.networkradar.core.domain.location.LocationObservation
 import com.networkradar.core.domain.measurement.*
 import com.networkradar.core.presentation.util.ObserveAsEvents
 import com.networkradar.feature.radar.domain.RadarMeasurement
+import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import kotlin.math.abs
 
@@ -54,25 +57,32 @@ fun RadarRoot(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var showMarkSpotDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val granted = permissions.values.all { it }
-        viewModel.onAction(RadarAction.PermissionResult(granted))
+        viewModel.onAction(RadarAction.PermissionResult(permissions))
     }
 
     ObserveAsEvents(viewModel.events) { event ->
         when (event) {
-            is RadarEvent.Error -> { /* Handle error */ }
+            is RadarEvent.Error -> {
+                scope.launch {
+                    snackbarHostState.showSnackbar(event.message)
+                }
+            }
             RadarEvent.RequestLocationPermission -> {
-                permissionLauncher.launch(
-                    arrayOf(
-                        Manifest.permission.ACCESS_FINE_LOCATION,
-                        Manifest.permission.ACCESS_COARSE_LOCATION
-                    )
+                val permissions = mutableListOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
                 )
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    permissions.add(Manifest.permission.ACTIVITY_RECOGNITION)
+                }
+                permissionLauncher.launch(permissions.toTypedArray())
             }
             RadarEvent.OpenAppSettings -> {
                 val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
@@ -85,6 +95,7 @@ fun RadarRoot(
 
     RadarScreen(
         state = state,
+        snackbarHostState = snackbarHostState,
         onAction = viewModel::onAction,
         onViewHeatmap = onViewHeatmap,
         onMarkSpotClick = { showMarkSpotDialog = true }
@@ -112,6 +123,7 @@ fun RadarRoot(
 @Composable
 fun RadarScreen(
     state: RadarState,
+    snackbarHostState: SnackbarHostState,
     onAction: (RadarAction) -> Unit,
     onViewHeatmap: (String) -> Unit,
     onMarkSpotClick: () -> Unit
@@ -123,7 +135,8 @@ fun RadarScreen(
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("Network Radar", fontWeight = FontWeight.Bold) })
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(
             modifier = Modifier

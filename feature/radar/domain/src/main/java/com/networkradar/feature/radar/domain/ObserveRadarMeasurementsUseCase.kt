@@ -48,7 +48,7 @@ class ObserveRadarMeasurementsUseCase(
             locationStatus = locationObs,
             point = NetworkMeasurementPoint(
                 location = validLocation,
-                indoorPosition = indoorPosition.takeIf { it.timestamp > 0 },
+                indoorPosition = indoorPosition?.takeIf { it.timestamp > 0 },
                 wifi = validWifi,
                 cellular = validCellular,
                 internet = null,

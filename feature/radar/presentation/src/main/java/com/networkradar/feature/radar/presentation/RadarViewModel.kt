@@ -1,5 +1,7 @@
 package com.networkradar.feature.radar.presentation
 
+import android.Manifest
+import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.networkradar.core.domain.indoor.IndoorPosition
@@ -79,7 +81,8 @@ class RadarViewModel(
         baseState.copy(
             downloadSpeedMbps = speed,
             isTestingSpeed = isTesting,
-            isLocationPermissionGranted = permission.isGranted,
+            isLocationPermissionGranted = permission.locationGranted,
+            isActivityPermissionGranted = permission.activityGranted,
             showPermissionRationale = permission.showRationale
         )
     }.stateIn(
@@ -106,10 +109,10 @@ class RadarViewModel(
                     }
                 }
                 
-                // Reactive permission check
-                val isGranted = measurement.locationStatus !is com.networkradar.core.domain.location.LocationObservation.PermissionRequired
-                if (_permissionState.value.isGranted != isGranted) {
-                    _permissionState.update { it.copy(isGranted = isGranted) }
+                // Reactive permission check (location)
+                val locGranted = measurement.locationStatus !is com.networkradar.core.domain.location.LocationObservation.PermissionRequired
+                if (_permissionState.value.locationGranted != locGranted) {
+                    _permissionState.update { it.copy(locationGranted = locGranted) }
                 }
             }
             .launchIn(viewModelScope)
@@ -118,7 +121,7 @@ class RadarViewModel(
     fun onAction(action: RadarAction) {
         when (action) {
             is RadarAction.StartQuickScan -> {
-                if (!_permissionState.value.isGranted) {
+                if (!_permissionState.value.locationGranted) {
                     _permissionState.update { it.copy(showRationale = true) }
                     return
                 }
@@ -130,16 +133,25 @@ class RadarViewModel(
                 }
             }
             is RadarAction.StartSpatialScan -> {
-                if (!_permissionState.value.isGranted) {
+                if (!_permissionState.value.locationGranted) {
                     _permissionState.update { it.copy(showRationale = true) }
                     return
                 }
-                if (!pdrDataSource.isAvailable) {
+                
+                if (!pdrDataSource.isHardwareAvailable) {
                     viewModelScope.launch {
                         _events.send(RadarEvent.Error("Step tracking sensors are not available on this device."))
                     }
                     return
                 }
+                
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !_permissionState.value.activityGranted) {
+                    viewModelScope.launch {
+                        _events.send(RadarEvent.Error("Physical Activity permission is required for Spatial Scan."))
+                    }
+                    return
+                }
+
                 viewModelScope.launch {
                     _analysisState.value = AnalysisState.Idle
                     _isSpatialScan.value = true
@@ -186,7 +198,19 @@ class RadarViewModel(
                 }
             }
             is RadarAction.PermissionResult -> {
-                _permissionState.update { it.copy(isGranted = action.granted, showRationale = false) }
+                val locGranted = action.results[Manifest.permission.ACCESS_FINE_LOCATION] == true || 
+                                action.results[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+                val activityGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    action.results[Manifest.permission.ACTIVITY_RECOGNITION] == true
+                } else true
+                
+                _permissionState.update { 
+                    it.copy(
+                        locationGranted = locGranted, 
+                        activityGranted = activityGranted,
+                        showRationale = false 
+                    ) 
+                }
             }
             RadarAction.RequestPermission -> {
                 viewModelScope.launch {
@@ -247,7 +271,8 @@ class RadarViewModel(
     }
     
     private data class PermissionState(
-        val isGranted: Boolean = true,
+        val locationGranted: Boolean = true,
+        val activityGranted: Boolean = true,
         val showRationale: Boolean = false
     )
 }

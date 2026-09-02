@@ -49,7 +49,7 @@ class RadarViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     
     private val activeSessionFlow = MutableStateFlow<ScanSession?>(null)
-    private val pdrPositionFlow = MutableStateFlow(IndoorPosition("", 0f, 0f, 0L))
+    private val pdrPositionFlow = MutableStateFlow<IndoorPosition?>(null)
 
     @BeforeEach
     fun setUp() {
@@ -63,6 +63,8 @@ class RadarViewModelTest {
             )
         )
         every { scanManager.activeSession } returns activeSessionFlow
+        coEvery { scanManager.recordMeasurement(any()) } returns Result.Success(Unit)
+
         every { pdrDataSource.currentPosition } returns pdrPositionFlow
         every { pdrDataSource.isAvailable } returns true
         every { pdrDataSource.startTracking(any()) } returns Unit

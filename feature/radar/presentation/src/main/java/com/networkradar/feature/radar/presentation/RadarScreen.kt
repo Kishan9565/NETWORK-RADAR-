@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -33,15 +34,16 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewModelScope
 import com.networkradar.core.designsystem.SignalExcellent
 import com.networkradar.core.designsystem.SignalFair
 import com.networkradar.core.designsystem.SignalGood
 import com.networkradar.core.designsystem.SignalPoor
 import com.networkradar.core.designsystem.SignalUnavailable
 import com.networkradar.core.domain.indoor.IndoorPosition
+import com.networkradar.core.domain.indoor.SpatialAnnotation
 import com.networkradar.core.domain.location.LocationObservation
 import com.networkradar.core.domain.measurement.*
 import com.networkradar.core.presentation.util.ObserveAsEvents
@@ -49,6 +51,8 @@ import com.networkradar.feature.radar.domain.RadarMeasurement
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import kotlin.math.abs
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 @Composable
 fun RadarRoot(
@@ -77,7 +81,8 @@ fun RadarRoot(
             RadarEvent.RequestLocationPermission -> {
                 val permissions = mutableListOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                    Manifest.permission.READ_PHONE_STATE
                 )
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     permissions.add(Manifest.permission.ACTIVITY_RECOGNITION)
@@ -190,6 +195,7 @@ fun RadarScreen(
             state.intelligenceSummary?.let { summary ->
                 IntelligenceSummaryView(
                     summary = summary,
+                    annotations = state.annotations,
                     onViewHeatmap = {
                         state.analyzedSessionId?.let { onViewHeatmap(it) }
                     }
@@ -200,12 +206,13 @@ fun RadarScreen(
             }
 
             if (measurement != null) {
-                LiveRFView(measurement)
+                LiveRFView(measurement, state.isPhoneStatePermissionGranted)
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 SpeedTestView(
                     speedMbps = state.downloadSpeedMbps,
+                    latencyMs = state.latencyMs,
                     isTesting = state.isTestingSpeed,
                     onRunTest = { onAction(RadarAction.RunSpeedTest) }
                 )
@@ -430,7 +437,7 @@ private fun ActiveScanHeader(
 }
 
 @Composable
-private fun LiveRFView(measurement: RadarMeasurement) {
+private fun LiveRFView(measurement: RadarMeasurement, phoneStateGranted: Boolean) {
     Column {
         Text(text = "LIVE RF INTELLIGENCE", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Spacer(modifier = Modifier.height(8.dp))
@@ -476,12 +483,17 @@ private fun LiveRFView(measurement: RadarMeasurement) {
                 explanation = "RSRP is signal strength. RSRQ and SINR indicate signal quality and interference levels."
             )
         } else {
+            val explanation = if (!phoneStateGranted) {
+                "Permission required to read cellular signal details."
+            } else {
+                "Cellular radio information is unavailable (weak signal or no SIM)."
+            }
             RFMetricCard(
                 title = "Cellular Signal",
                 icon = Icons.Default.CellTower,
                 quality = SignalQuality.UNAVAILABLE,
                 details = emptyList(),
-                explanation = "Cellular radio information is unavailable."
+                explanation = explanation
             )
         }
     }
@@ -565,6 +577,7 @@ private fun SignalBadge(quality: SignalQuality) {
 @Composable
 private fun SpeedTestView(
     speedMbps: Double?,
+    latencyMs: Double?,
     isTesting: Boolean,
     onRunTest: () -> Unit
 ) {
@@ -579,7 +592,7 @@ private fun SpeedTestView(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text(text = "NETWORK SPEED", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    Text(text = "NETWORK PERFORMANCE", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.height(4.dp))
                     if (isTesting) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -588,23 +601,39 @@ private fun SpeedTestView(
                             Text(text = "Testing...", style = MaterialTheme.typography.bodyMedium)
                         }
                     } else {
-                        Text(
-                            text = speedMbps?.let { "${"%.1f".format(it)} Mbps" } ?: "Not tested",
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row {
+                            Column {
+                                Text(text = "Download", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = speedMbps?.let { "${"%.1f".format(it)} Mbps" } ?: "---",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(24.dp))
+                            Column {
+                                Text(text = "Latency", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = latencyMs?.let { "${it.toInt()} ms" } ?: "---",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
                 }
                 Button(onClick = onRunTest, enabled = !isTesting) {
                     Text("RUN TEST")
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Actively measures real throughput. Data usage applies.",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Upload: Not yet available",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+            }
         }
     }
 }
@@ -653,6 +682,7 @@ private fun LocationView(measurement: RadarMeasurement, isSpatial: Boolean) {
 @Composable
 private fun IntelligenceSummaryView(
     summary: ScanIntelligenceSummary,
+    annotations: List<SpatialAnnotation>,
     onViewHeatmap: () -> Unit
 ) {
     Column {
@@ -693,28 +723,69 @@ private fun IntelligenceSummaryView(
 
         Spacer(modifier = Modifier.height(12.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            RankedSpotCard("BEST SPOT", spot = summary.bestSpot, containerColor = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.weight(1f))
-            RankedSpotCard("WEAKEST SPOT", spot = summary.worstSpot, containerColor = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.weight(1f))
+            RankedSpotCard("BEST SPOT", spot = summary.bestSpot, annotations = annotations, containerColor = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.weight(1f))
+            RankedSpotCard("WEAKEST SPOT", spot = summary.worstSpot, annotations = annotations, containerColor = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.weight(1f))
         }
     }
 }
 
 @Composable
-private fun RankedSpotCard(label: String, spot: RankedSpot?, containerColor: Color, modifier: Modifier = Modifier) {
+private fun RankedSpotCard(
+    label: String, 
+    spot: RankedSpot?, 
+    annotations: List<SpatialAnnotation>,
+    containerColor: Color, 
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
     Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = containerColor)) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(text = label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(4.dp))
             if (spot != null) {
                 Text(text = "Score: ${"%.1f".format(spot.score)}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                
                 val indoor = spot.indoorPosition
                 val loc = spot.location
-                val pos = when {
-                    indoor != null -> "Indoor (${indoor.x.toInt()}m, ${indoor.y.toInt()}m)"
-                    loc != null -> "${"%.4f".format(loc.lat)}, ${"%.4f".format(loc.long)}"
-                    else -> "Unknown"
+                
+                if (indoor != null) {
+                    val nearestPin = annotations.minByOrNull { pin ->
+                        sqrt((pin.x - indoor.x).pow(2) + (pin.y - indoor.y).pow(2))
+                    }
+                    val distanceToPin = nearestPin?.let { pin ->
+                        sqrt((pin.x - indoor.x).pow(2) + (pin.y - indoor.y).pow(2))
+                    }
+                    
+                    if (distanceToPin != null && distanceToPin < 1.5) {
+                        Text(
+                            text = "Near: ${nearestPin.label ?: "Unnamed Marker"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "(${indoor.x.toInt()}m, ${indoor.y.toInt()}m)",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    } else {
+                        Text(
+                            text = "Indoor (${indoor.x.toInt()}m, ${indoor.y.toInt()}m)",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                } else if (loc != null) {
+                    Text(
+                        text = "${"%.5f".format(loc.lat)}, ${"%.5f".format(loc.long)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        textDecoration = TextDecoration.Underline,
+                        modifier = Modifier.clickable {
+                            val uri = "geo:${loc.lat},${loc.long}?q=${loc.lat},${loc.long}"
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri))
+                            context.startActivity(intent)
+                        }
+                    )
+                } else {
+                    Text(text = "Unknown Position", style = MaterialTheme.typography.labelSmall)
                 }
-                Text(text = pos, style = MaterialTheme.typography.labelSmall)
             } else {
                 Text(text = "Insufficient Data", style = MaterialTheme.typography.bodyMedium)
             }

@@ -9,7 +9,7 @@ data class HeatmapState(
     val heatmapCells: List<HeatmapCell> = emptyList(),
     val sourcePoints: List<HeatmapEngine.WeightedPoint> = emptyList(),
     val annotations: List<SpatialAnnotation> = emptyList(),
-    val selectedMetric: HeatmapMetric = HeatmapMetric.DOWNLOAD,
+    val selectedMetric: HeatmapMetric = HeatmapMetric.WIFI_RSSI,
     val selectedSessionId: String? = null,
     val isLoading: Boolean = false,
     val error: String? = null,

@@ -251,9 +251,6 @@ private fun HeatmapLegend(
 }
 
 private fun getMetricLabel(metric: HeatmapMetric): String = when(metric) {
-    HeatmapMetric.DOWNLOAD -> "Download Speed"
-    HeatmapMetric.UPLOAD -> "Upload Speed"
-    HeatmapMetric.LATENCY -> "Latency"
     HeatmapMetric.WIFI_RSSI -> "Wi-Fi RSSI"
     HeatmapMetric.CELLULAR_RSRP -> "Cellular RSRP"
     HeatmapMetric.CELLULAR_RSRQ -> "Cellular RSRQ"
@@ -261,8 +258,6 @@ private fun getMetricLabel(metric: HeatmapMetric): String = when(metric) {
 }
 
 private fun getMetricUnit(metric: HeatmapMetric): String = when(metric) {
-    HeatmapMetric.DOWNLOAD, HeatmapMetric.UPLOAD -> "Mbps"
-    HeatmapMetric.LATENCY -> "ms"
     HeatmapMetric.WIFI_RSSI, HeatmapMetric.CELLULAR_RSRP -> "dBm"
     HeatmapMetric.CELLULAR_RSRQ -> "dB"
     HeatmapMetric.CELLULAR_SINR -> "dB"

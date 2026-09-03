@@ -3,6 +3,8 @@ package com.networkradar.feature.history.presentation
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -10,13 +12,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -25,6 +27,7 @@ import com.networkradar.core.designsystem.SignalFair
 import com.networkradar.core.designsystem.SignalGood
 import com.networkradar.core.designsystem.SignalPoor
 import com.networkradar.core.designsystem.SignalUnavailable
+import com.networkradar.core.domain.indoor.SpatialAnnotation
 import com.networkradar.core.domain.measurement.NetworkMetric
 import com.networkradar.core.domain.measurement.RankedSpot
 import com.networkradar.core.domain.measurement.ScanIntelligenceSummary
@@ -37,6 +40,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 @Composable
 fun ScanReportRoot(
@@ -46,14 +51,17 @@ fun ScanReportRoot(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
 
     ObserveAsEvents(viewModel.events) { event ->
         when (event) {
             is ScanReportEvent.ExportReady -> {
-                shareFile(context, event.uri, event.filename)
+                shareFile(context, event.uri, event.filename) { errorMessage ->
+                    viewModel.onAction(ScanReportAction.LoadReport) // Refresh or just notify
+                }
             }
             is ScanReportEvent.Error -> {
-                // Error feedback
+                // Surface error to user
             }
         }
     }
@@ -115,6 +123,7 @@ fun ScanReportScreen(
 
                 IntelligenceSummaryContent(
                     summary = state.summary,
+                    annotations = state.annotations,
                     onViewHeatmap = onViewHeatmap
                 )
                 
@@ -151,6 +160,7 @@ fun ScanReportScreen(
 @Composable
 private fun IntelligenceSummaryContent(
     summary: ScanIntelligenceSummary,
+    annotations: List<SpatialAnnotation>,
     onViewHeatmap: () -> Unit
 ) {
     Column {
@@ -196,8 +206,8 @@ private fun IntelligenceSummaryContent(
 
         Spacer(modifier = Modifier.height(16.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            RankedSpotCard("BEST SPOT", summary.bestSpot, MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.weight(1f))
-            RankedSpotCard("WEAKEST SPOT", summary.worstSpot, MaterialTheme.colorScheme.errorContainer, modifier = Modifier.weight(1f))
+            RankedSpotCard("BEST SPOT", summary.bestSpot, annotations, MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.weight(1f))
+            RankedSpotCard("WEAKEST SPOT", summary.worstSpot, annotations, MaterialTheme.colorScheme.errorContainer, modifier = Modifier.weight(1f))
         }
     }
 }
@@ -235,21 +245,62 @@ private fun SignalBadgeTiny(quality: SignalQuality) {
 }
 
 @Composable
-private fun RankedSpotCard(label: String, spot: RankedSpot?, containerColor: Color, modifier: Modifier = Modifier) {
+private fun RankedSpotCard(
+    label: String, 
+    spot: RankedSpot?, 
+    annotations: List<SpatialAnnotation>,
+    containerColor: Color, 
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
     Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = containerColor)) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(text = label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(4.dp))
             if (spot != null) {
                 Text(text = "Score: ${"%.1f".format(spot.score)}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                
                 val indoor = spot.indoorPosition
                 val loc = spot.location
-                val pos = when {
-                    indoor != null -> "Indoor (${indoor.x.toInt()}m, ${indoor.y.toInt()}m)"
-                    loc != null -> "${"%.4f".format(loc.lat)}, ${"%.4f".format(loc.long)}"
-                    else -> "Unknown"
+                
+                if (indoor != null) {
+                    val nearestPin = annotations.minByOrNull { pin ->
+                        sqrt((pin.x - indoor.x).pow(2) + (pin.y - indoor.y).pow(2))
+                    }
+                    val distanceToPin = nearestPin?.let { pin ->
+                        sqrt((pin.x - indoor.x).pow(2) + (pin.y - indoor.y).pow(2))
+                    }
+                    
+                    if (distanceToPin != null && distanceToPin < 1.5) {
+                        Text(
+                            text = "Near: ${nearestPin.label ?: "Unnamed Marker"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "(${indoor.x.toInt()}m, ${indoor.y.toInt()}m)",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    } else {
+                        Text(
+                            text = "Indoor (${indoor.x.toInt()}m, ${indoor.y.toInt()}m)",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                } else if (loc != null) {
+                    Text(
+                        text = "${"%.5f".format(loc.lat)}, ${"%.5f".format(loc.long)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        textDecoration = TextDecoration.Underline,
+                        modifier = Modifier.clickable {
+                            val uri = "geo:${loc.lat},${loc.long}?q=${loc.lat},${loc.long}"
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri))
+                            context.startActivity(intent)
+                        }
+                    )
+                } else {
+                    Text(text = "Unknown Position", style = MaterialTheme.typography.labelSmall)
                 }
-                Text(text = pos, style = MaterialTheme.typography.labelSmall)
             } else {
                 Text(text = "Insufficient Data", style = MaterialTheme.typography.bodyMedium)
             }
@@ -265,7 +316,7 @@ private fun InfoItem(label: String, value: String) {
     }
 }
 
-private fun shareFile(context: Context, content: String, filename: String) {
+private fun shareFile(context: Context, content: String, filename: String, onError: (String) -> Unit) {
     try {
         val file = File(context.cacheDir, filename)
         FileOutputStream(file).use { 
@@ -280,6 +331,7 @@ private fun shareFile(context: Context, content: String, filename: String) {
         }
         context.startActivity(Intent.createChooser(intent, "Share Scan Data"))
     } catch (e: Exception) {
+        Toast.makeText(context, "Couldn't share file: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
         e.printStackTrace()
     }
 }

@@ -21,6 +21,7 @@ val historyPresentationModule = module {
         ScanReportViewModel(
             sessionId = sessionId,
             scanSessionDataSource = get(),
+            annotationDataSource = get(),
             getScanReportUseCase = get(),
             exportScanUseCase = get()
         )

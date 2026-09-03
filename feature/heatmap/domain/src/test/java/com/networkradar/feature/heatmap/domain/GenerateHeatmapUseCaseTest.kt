@@ -1,9 +1,9 @@
 package com.networkradar.feature.heatmap.domain
 
 import com.networkradar.core.domain.indoor.IndoorPosition
-import com.networkradar.core.domain.measurement.InternetMeasurement
 import com.networkradar.core.domain.measurement.NetworkMeasurementPoint
 import com.networkradar.core.domain.measurement.NetworkMeasurementPointLocalDataSource
+import com.networkradar.core.domain.measurement.WifiMeasurement
 import com.networkradar.core.domain.util.Result
 import io.mockk.coEvery
 import io.mockk.mockk
@@ -27,7 +27,7 @@ class GenerateHeatmapUseCaseTest {
     fun `invoke should return empty result when no measurements exist`() = runTest {
         coEvery { measurementDataSource.getMeasurementsForSession("session1") } returns flowOf(emptyList())
 
-        val result = useCase("session1", HeatmapMetric.DOWNLOAD)
+        val result = useCase("session1", HeatmapMetric.WIFI_RSSI)
 
         assertTrue(result is Result.Success)
         assertTrue((result as Result.Success).data.cells.isEmpty())
@@ -36,16 +36,16 @@ class GenerateHeatmapUseCaseTest {
     @Test
     fun `invoke should include points with valid indoor position`() = runTest {
         val points = listOf(
-            createPoint(sessionId = "session1", download = 100.0, x = 1f, y = 1f)
+            createPoint(sessionId = "session1", rssi = -50, x = 1f, y = 1f)
         )
         coEvery { measurementDataSource.getMeasurementsForSession("session1") } returns flowOf(points)
 
-        val result = useCase("session1", HeatmapMetric.DOWNLOAD)
+        val result = useCase("session1", HeatmapMetric.WIFI_RSSI)
 
         assertTrue(result is Result.Success)
         val data = (result as Result.Success).data
         assertEquals(1, data.sourcePoints.size)
-        assertEquals(100.0, data.sourcePoints.first().value)
+        assertEquals(-50.0, data.sourcePoints.first().value)
         assertEquals(1f, data.sourcePoints.first().x)
         assertEquals(1f, data.sourcePoints.first().y)
     }
@@ -53,12 +53,12 @@ class GenerateHeatmapUseCaseTest {
     @Test
     fun `invoke should ignore points without the selected metric`() = runTest {
         val points = listOf(
-            createPoint(sessionId = "session1", download = null), // No download
-            createPoint(sessionId = "session1", download = 50.0)
+            createPoint(sessionId = "session1", rssi = null), // No RSSI
+            createPoint(sessionId = "session1", rssi = -60)
         )
         coEvery { measurementDataSource.getMeasurementsForSession("session1") } returns flowOf(points)
 
-        val result = useCase("session1", HeatmapMetric.DOWNLOAD)
+        val result = useCase("session1", HeatmapMetric.WIFI_RSSI)
 
         assertTrue(result is Result.Success)
         assertEquals(1, (result as Result.Success).data.sourcePoints.size)
@@ -66,16 +66,16 @@ class GenerateHeatmapUseCaseTest {
 
     private fun createPoint(
         sessionId: String,
-        download: Double? = null,
+        rssi: Int? = null,
         x: Float = 0f,
         y: Float = 0f
     ) = NetworkMeasurementPoint(
         id = 1L,
         location = null,
         indoorPosition = IndoorPosition(sessionId, x, y, System.currentTimeMillis()),
-        wifi = null,
+        wifi = rssi?.let { WifiMeasurement(it, null, null, null, 0L) },
         cellular = null,
-        internet = InternetMeasurement(null, download, null, 0L),
+        internet = null,
         timestamp = 0L
     )
 }

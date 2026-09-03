@@ -2,6 +2,7 @@ package com.networkradar.feature.history.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.networkradar.core.domain.indoor.SpatialAnnotationLocalDataSource
 import com.networkradar.core.domain.measurement.ScanSessionLocalDataSource
 import com.networkradar.core.domain.util.Result
 import com.networkradar.feature.history.domain.ExportScanUseCase
@@ -9,6 +10,7 @@ import com.networkradar.feature.history.domain.GetScanReportUseCase
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -16,6 +18,7 @@ import kotlinx.coroutines.launch
 class ScanReportViewModel(
     private val sessionId: String,
     private val scanSessionDataSource: ScanSessionLocalDataSource,
+    private val annotationDataSource: SpatialAnnotationLocalDataSource,
     private val getScanReportUseCase: GetScanReportUseCase,
     private val exportScanUseCase: ExportScanUseCase
 ) : ViewModel() {
@@ -51,12 +54,15 @@ class ScanReportViewModel(
             }
             val session = (sessionResult as Result.Success).data
             
+            val annotations = annotationDataSource.getAnnotationsForSession(sessionId).first()
+            
             val reportResult = getScanReportUseCase(sessionId)
             when (reportResult) {
                 is Result.Success -> {
                     _state.update { it.copy(
                         scan = session,
                         summary = reportResult.data,
+                        annotations = annotations,
                         isLoading = false
                     ) }
                 }

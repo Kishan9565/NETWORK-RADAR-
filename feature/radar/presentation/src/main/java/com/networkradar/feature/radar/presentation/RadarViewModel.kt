@@ -8,7 +8,9 @@ import com.networkradar.core.domain.indoor.IndoorPosition
 import com.networkradar.core.domain.indoor.PdrDataSource
 import com.networkradar.core.domain.indoor.SpatialAnnotation
 import com.networkradar.core.domain.indoor.SpatialAnnotationLocalDataSource
+import com.networkradar.core.domain.measurement.ScanIntelligenceSummary
 import com.networkradar.core.domain.measurement.ScanManager
+import com.networkradar.core.domain.measurement.ScanSession
 import com.networkradar.core.domain.util.Result
 import com.networkradar.core.domain.util.onFailure
 import com.networkradar.core.domain.util.onSuccess
@@ -16,11 +18,14 @@ import com.networkradar.feature.radar.domain.AnalyzeScanUseCase
 import com.networkradar.feature.radar.domain.ObserveRadarMeasurementsUseCase
 import com.networkradar.feature.radar.domain.RadarMeasurement
 import com.networkradar.feature.speedtest.domain.RunDownloadTestUseCase
+import com.networkradar.feature.speedtest.domain.RunLatencyTestUseCase
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -34,6 +39,7 @@ class RadarViewModel(
     private val observeRadarMeasurementsUseCase: ObserveRadarMeasurementsUseCase,
     private val analyzeScanUseCase: AnalyzeScanUseCase,
     private val runDownloadTestUseCase: RunDownloadTestUseCase,
+    private val runLatencyTestUseCase: RunLatencyTestUseCase,
     private val scanManager: ScanManager,
     private val pdrDataSource: PdrDataSource,
     private val annotationDataSource: SpatialAnnotationLocalDataSource
@@ -42,6 +48,7 @@ class RadarViewModel(
     private val _analysisState = MutableStateFlow<AnalysisState>(AnalysisState.Idle)
     private val _isSpatialScan = MutableStateFlow(false)
     private val _downloadSpeed = MutableStateFlow<Double?>(null)
+    private val _latencyMs = MutableStateFlow<Double?>(null)
     private val _isTestingSpeed = MutableStateFlow(false)
     private val _permissionState = MutableStateFlow(PermissionState())
     private val _spatialPath = MutableStateFlow<List<IndoorPosition>>(emptyList())
@@ -54,36 +61,55 @@ class RadarViewModel(
             replay = 1
         )
 
-    val state: StateFlow<RadarState> = combine(
-        combine(
-            measurements,
-            scanManager.activeSession,
-            _isSpatialScan,
-            _spatialPath,
-            _analysisState
-        ) { measurement, activeSession, isSpatial, spatialPath, analysis ->
-            RadarState(
-                measurement = measurement,
-                activeSession = activeSession,
-                isSpatialScan = isSpatial,
-                currentIndoorPosition = measurement.point.indoorPosition,
-                spatialPath = spatialPath,
-                isPdrAvailable = pdrDataSource.isAvailable,
-                intelligenceSummary = (analysis as? AnalysisState.Completed)?.summary,
-                analyzedSessionId = (analysis as? AnalysisState.Completed)?.sessionId,
-                isAnalyzing = analysis is AnalysisState.Loading
-            )
-        },
+    private val annotations = scanManager.activeSession.flatMapLatest { session ->
+        if (session != null) {
+            annotationDataSource.getAnnotationsForSession(session.id)
+        } else {
+            flowOf(emptyList())
+        }
+    }
+
+    // Grouping flows to avoid complex combine overloads
+    private val coreFlow = combine(
+        measurements,
+        scanManager.activeSession,
+        _isSpatialScan,
+        _spatialPath,
+        _analysisState
+    ) { measurement, activeSession, isSpatial, spatialPath, analysis ->
+        RadarState(
+            measurement = measurement,
+            activeSession = activeSession,
+            isSpatialScan = isSpatial,
+            currentIndoorPosition = measurement.point.indoorPosition,
+            spatialPath = spatialPath,
+            intelligenceSummary = (analysis as? AnalysisState.Completed)?.summary,
+            analyzedSessionId = (analysis as? AnalysisState.Completed)?.sessionId,
+            isAnalyzing = analysis is AnalysisState.Loading
+        )
+    }
+
+    private val auxiliaryFlow = combine(
+        annotations,
         _downloadSpeed,
+        _latencyMs,
         _isTestingSpeed,
         _permissionState
-    ) { baseState, speed, isTesting, permission ->
-        baseState.copy(
-            downloadSpeedMbps = speed,
-            isTestingSpeed = isTesting,
-            isLocationPermissionGranted = permission.locationGranted,
-            isActivityPermissionGranted = permission.activityGranted,
-            showPermissionRationale = permission.showRationale
+    ) { annoList, speed, latency, isTesting, permission ->
+        AuxState(annoList, speed, latency, isTesting, permission)
+    }
+
+    val state: StateFlow<RadarState> = combine(coreFlow, auxiliaryFlow) { core, aux ->
+        core.copy(
+            annotations = aux.annotations,
+            downloadSpeedMbps = aux.downloadSpeed,
+            latencyMs = aux.latency,
+            isTestingSpeed = aux.isTesting,
+            isLocationPermissionGranted = aux.permission.locationGranted,
+            isActivityPermissionGranted = aux.permission.activityGranted,
+            isPhoneStatePermissionGranted = aux.permission.phoneStateGranted,
+            showPermissionRationale = aux.permission.showRationale,
+            isPdrAvailable = pdrDataSource.isAvailable
         )
     }.stateIn(
         scope = viewModelScope,
@@ -203,11 +229,13 @@ class RadarViewModel(
                 val activityGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     action.results[Manifest.permission.ACTIVITY_RECOGNITION] == true
                 } else true
+                val phoneGranted = action.results[Manifest.permission.READ_PHONE_STATE] == true
                 
                 _permissionState.update { 
                     it.copy(
                         locationGranted = locGranted, 
                         activityGranted = activityGranted,
+                        phoneStateGranted = phoneGranted,
                         showRationale = false 
                     ) 
                 }
@@ -227,7 +255,14 @@ class RadarViewModel(
         viewModelScope.launch {
             _isTestingSpeed.value = true
             _downloadSpeed.value = null
+            _latencyMs.value = null
             
+            // Run Latency first (it's quick)
+            val latencyResult = runLatencyTestUseCase("8.8.8.8")
+            if (latencyResult is Result.Success) {
+                _latencyMs.value = latencyResult.data
+            }
+
             val testUrl = "https://speed.cloudflare.com/__down?bytes=10000000" 
             
             runDownloadTestUseCase(testUrl)
@@ -266,13 +301,22 @@ class RadarViewModel(
         data object Loading : AnalysisState
         data class Completed(
             val sessionId: String,
-            val summary: com.networkradar.core.domain.measurement.ScanIntelligenceSummary
+            val summary: ScanIntelligenceSummary
         ) : AnalysisState
     }
     
     private data class PermissionState(
         val locationGranted: Boolean = true,
         val activityGranted: Boolean = true,
+        val phoneStateGranted: Boolean = true,
         val showRationale: Boolean = false
+    )
+
+    private data class AuxState(
+        val annotations: List<SpatialAnnotation>,
+        val downloadSpeed: Double?,
+        val latency: Double?,
+        val isTesting: Boolean,
+        val permission: PermissionState
     )
 }

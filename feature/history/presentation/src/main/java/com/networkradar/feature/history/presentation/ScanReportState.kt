@@ -1,11 +1,13 @@
 package com.networkradar.feature.history.presentation
 
+import com.networkradar.core.domain.indoor.SpatialAnnotation
 import com.networkradar.core.domain.measurement.ScanIntelligenceSummary
 import com.networkradar.core.domain.measurement.ScanSession
 
 data class ScanReportState(
     val scan: ScanSession? = null,
     val summary: ScanIntelligenceSummary? = null,
+    val annotations: List<SpatialAnnotation> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
     val isExporting: Boolean = false,

@@ -47,6 +47,7 @@ class RadarViewModel(
 
     private val _analysisState = MutableStateFlow<AnalysisState>(AnalysisState.Idle)
     private val _isSpatialScan = MutableStateFlow(false)
+    private val _scanStartTime = MutableStateFlow(0L)
     private val _downloadSpeed = MutableStateFlow<Double?>(null)
     private val _latencyMs = MutableStateFlow<Double?>(null)
     private val _isTestingSpeed = MutableStateFlow(false)
@@ -69,18 +70,20 @@ class RadarViewModel(
         }
     }
 
-    // Grouping flows to avoid complex combine overloads
+    // Grouping flows to avoid combine overloads limits
     private val coreFlow = combine(
         measurements,
         scanManager.activeSession,
         _isSpatialScan,
-        _spatialPath,
-        _analysisState
-    ) { measurement, activeSession, isSpatial, spatialPath, analysis ->
+        _scanStartTime,
+        combine(_spatialPath, _analysisState) { path, analysis -> path to analysis }
+    ) { measurement, activeSession, isSpatial, startTime, pathAndAnalysis ->
+        val (spatialPath, analysis) = pathAndAnalysis
         RadarState(
             measurement = measurement,
             activeSession = activeSession,
             isSpatialScan = isSpatial,
+            scanStartTime = startTime,
             currentIndoorPosition = measurement.point.indoorPosition,
             spatialPath = spatialPath,
             intelligenceSummary = (analysis as? AnalysisState.Completed)?.summary,
@@ -155,7 +158,10 @@ class RadarViewModel(
                     _analysisState.value = AnalysisState.Idle
                     _isSpatialScan.value = false
                     _spatialPath.value = emptyList()
-                    scanManager.startScan(action.name, isSpatial = false)
+                    val result = scanManager.startScan(action.name, isSpatial = false)
+                    result.onSuccess { session ->
+                        _scanStartTime.value = session.startedAt
+                    }
                 }
             }
             is RadarAction.StartSpatialScan -> {
@@ -185,6 +191,7 @@ class RadarViewModel(
                     
                     val result = scanManager.startScan(action.name, isSpatial = true)
                     result.onSuccess { session ->
+                        _scanStartTime.value = session.startedAt
                         pdrDataSource.startTracking(session.id)
                     }
                 }

@@ -10,6 +10,7 @@ data class RadarState(
     val measurement: RadarMeasurement? = null,
     val activeSession: ScanSession? = null,
     val isSpatialScan: Boolean = false,
+    val scanStartTime: Long = 0L,
     val currentIndoorPosition: IndoorPosition? = null,
     val spatialPath: List<IndoorPosition> = emptyList(),
     val annotations: List<SpatialAnnotation> = emptyList(),

@@ -11,6 +11,7 @@ android {
 dependencies {
     implementation(project(":core:domain"))
     implementation(project(":core:presentation"))
+    implementation(project(":core:design-system"))
     implementation(project(":feature:heatmap:domain"))
     
     implementation(libs.kotlinx.serialization.json)

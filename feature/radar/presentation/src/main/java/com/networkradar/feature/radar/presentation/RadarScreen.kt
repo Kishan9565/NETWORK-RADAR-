@@ -50,6 +50,8 @@ import com.networkradar.core.presentation.util.ObserveAsEvents
 import com.networkradar.feature.radar.domain.RadarMeasurement
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
+import java.text.SimpleDateFormat
+import java.util.*
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.sqrt
@@ -196,6 +198,8 @@ fun RadarScreen(
                 IntelligenceSummaryView(
                     summary = summary,
                     annotations = state.annotations,
+                    isSpatial = state.isSpatialScan,
+                    scanStartTime = state.scanStartTime,
                     onViewHeatmap = {
                         state.analyzedSessionId?.let { onViewHeatmap(it) }
                     }
@@ -224,6 +228,235 @@ fun RadarScreen(
                 Spacer(modifier = Modifier.height(24.dp))
             }
         }
+    }
+}
+
+@Composable
+private fun ActiveScanHeader(
+    activeSession: ScanSession,
+    isSpatial: Boolean,
+    onStopScan: () -> Unit,
+    onRecalibrate: () -> Unit,
+    onMarkSpot: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = if (isSpatial) "SPATIAL SCAN ACTIVE" else "QUICK SCAN ACTIVE", 
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                    Text(text = activeSession.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                }
+                Button(
+                    onClick = onStopScan,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("STOP")
+                }
+            }
+            
+            if (isSpatial) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = onRecalibrate,
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Recalibrate", style = MaterialTheme.typography.labelMedium)
+                    }
+                    OutlinedButton(
+                        onClick = onMarkSpot,
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Icon(Icons.Default.PinDrop, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Mark Spot", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(text = "${activeSession.measurementCount} points recorded", style = MaterialTheme.typography.bodyMedium)
+            }
+            
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "A new point is recorded automatically whenever your Wi-Fi, cellular, or GPS reading updates — roughly every 2–5 seconds.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun IntelligenceSummaryView(
+    summary: ScanIntelligenceSummary,
+    annotations: List<SpatialAnnotation>,
+    isSpatial: Boolean,
+    scanStartTime: Long,
+    onViewHeatmap: () -> Unit
+) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = "SCAN INTELLIGENCE", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Button(onClick = onViewHeatmap) {
+                Text("VIEW HEATMAP")
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    InfoItem("Coverage", summary.dataSufficiency.name)
+                    InfoItem("Confidence", "${(summary.overallConfidence * 100).toInt()}%")
+                }
+                
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (summary.statistics.isNotEmpty()) {
+                    Text(text = "Averages", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        summary.statistics[NetworkMetric.DOWNLOAD]?.let {
+                            InfoItem("Download", "${"%.1f".format(it.average)} Mbps")
+                        }
+                        summary.statistics[NetworkMetric.WIFI_RSSI]?.let {
+                            InfoItem("Wi-Fi RSSI", "${it.average.toInt()} dBm")
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            RankedSpotCard(
+                label = if (isSpatial) "BEST SPOT" else "BEST MOMENT",
+                spot = summary.bestSpot,
+                annotations = annotations,
+                isSpatial = isSpatial,
+                scanStartTime = scanStartTime,
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.weight(1f)
+            )
+            RankedSpotCard(
+                label = if (isSpatial) "WEAKEST SPOT" else "WEAKEST MOMENT",
+                spot = summary.worstSpot,
+                annotations = annotations,
+                isSpatial = isSpatial,
+                scanStartTime = scanStartTime,
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun RankedSpotCard(
+    label: String, 
+    spot: RankedSpot?, 
+    annotations: List<SpatialAnnotation>,
+    isSpatial: Boolean,
+    scanStartTime: Long,
+    containerColor: Color, 
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = containerColor)) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(text = label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(4.dp))
+            if (spot != null) {
+                Text(text = "Score: ${"%.1f".format(spot.score)}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                
+                if (isSpatial) {
+                    val indoor = spot.indoorPosition
+                    val loc = spot.location
+                    
+                    if (indoor != null) {
+                        val nearestPin = annotations.minByOrNull { pin ->
+                            sqrt((pin.x - indoor.x).pow(2) + (pin.y - indoor.y).pow(2))
+                        }
+                        val distanceToPin = nearestPin?.let { pin ->
+                            sqrt((pin.x - indoor.x).pow(2) + (pin.y - indoor.y).pow(2))
+                        }
+                        
+                        if (distanceToPin != null && distanceToPin < 1.5) {
+                            Text(
+                                text = "Near: ${nearestPin.label ?: "Unnamed Marker"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "(${indoor.x.toInt()}m, ${indoor.y.toInt()}m)",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        } else {
+                            Text(
+                                text = "Indoor (${indoor.x.toInt()}m, ${indoor.y.toInt()}m)",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    } else if (loc != null) {
+                        Text(
+                            text = "${"%.5f".format(loc.lat)}, ${"%.5f".format(loc.long)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            textDecoration = TextDecoration.Underline,
+                            modifier = Modifier.clickable {
+                                val uri = "geo:${loc.lat},${loc.long}?q=${loc.lat},${loc.long}"
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri))
+                                context.startActivity(intent)
+                            }
+                        )
+                    } else {
+                        Text(text = "Unknown Position", style = MaterialTheme.typography.labelSmall)
+                    }
+                } else {
+                    // Quick Scan - Time-based reference relative to startedAt
+                    val relativeTimeMs = spot.timestamp - scanStartTime
+                    val totalSeconds = relativeTimeMs / 1000
+                    val minutes = totalSeconds / 60
+                    val seconds = totalSeconds % 60
+                    Text(
+                        text = if (minutes > 0) "${minutes}m ${seconds}s into scan" else "${seconds}s into scan",
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+            } else {
+                Text(text = "Insufficient Data", style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun InfoItem(label: String, value: String) {
+    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+        Text(text = label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(text = value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -369,68 +602,55 @@ private fun ScanModeSelection(
 }
 
 @Composable
-private fun ActiveScanHeader(
-    activeSession: ScanSession,
-    isSpatial: Boolean,
-    onStopScan: () -> Unit,
-    onRecalibrate: () -> Unit,
-    onMarkSpot: () -> Unit
+private fun PermissionRationaleDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Location Access Required") },
+        text = {
+            Text("Network Radar needs location access to measure Wi-Fi and GPS signal quality at your position. This is required by Android to perform network scans.")
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text("Allow Access")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Later")
+            }
+        }
+    )
+}
+
+@Composable
+private fun PermissionDeniedBanner(
+    onRequestPermission: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Text(
+                text = "Location Permission Required",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Text(
+                text = "To measure signal quality, please grant location access.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = onRequestPermission,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
             ) {
-                Column {
-                    Text(
-                        text = if (isSpatial) "SPATIAL SCAN ACTIVE" else "QUICK SCAN ACTIVE", 
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
-                    Text(text = activeSession.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                }
-                Button(
-                    onClick = onStopScan,
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text("STOP")
-                }
-            }
-            
-            if (isSpatial) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = onRecalibrate,
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(horizontal = 8.dp)
-                    ) {
-                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Recalibrate", style = MaterialTheme.typography.labelMedium)
-                    }
-                    OutlinedButton(
-                        onClick = onMarkSpot,
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(horizontal = 8.dp)
-                    ) {
-                        Icon(Icons.Default.PinDrop, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Mark Spot", style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(text = "${activeSession.measurementCount} points recorded", style = MaterialTheme.typography.bodyMedium)
+                Text("Grant Permission")
             }
         }
     }
@@ -631,7 +851,7 @@ private fun SpeedTestView(
                 Text(
                     text = "Upload: Not yet available",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
                 )
             }
         }
@@ -674,183 +894,6 @@ private fun LocationView(measurement: RadarMeasurement, isSpatial: Boolean) {
                     is LocationObservation.Loading -> Text("Acquiring GPS...", style = MaterialTheme.typography.bodyMedium)
                     else -> Text("GPS location unavailable", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun IntelligenceSummaryView(
-    summary: ScanIntelligenceSummary,
-    annotations: List<SpatialAnnotation>,
-    onViewHeatmap: () -> Unit
-) {
-    Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(text = "SCAN INTELLIGENCE", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Button(onClick = onViewHeatmap) {
-                Text("VIEW HEATMAP")
-            }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    InfoItem("Coverage", summary.dataSufficiency.name)
-                    InfoItem("Confidence", "${(summary.overallConfidence * 100).toInt()}%")
-                }
-                
-                Spacer(modifier = Modifier.height(12.dp))
-
-                if (summary.statistics.isNotEmpty()) {
-                    Text(text = "Averages", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        summary.statistics[NetworkMetric.DOWNLOAD]?.let {
-                            InfoItem("Download", "${"%.1f".format(it.average)} Mbps")
-                        }
-                        summary.statistics[NetworkMetric.WIFI_RSSI]?.let {
-                            InfoItem("Wi-Fi RSSI", "${it.average.toInt()} dBm")
-                        }
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            RankedSpotCard("BEST SPOT", spot = summary.bestSpot, annotations = annotations, containerColor = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.weight(1f))
-            RankedSpotCard("WEAKEST SPOT", spot = summary.worstSpot, annotations = annotations, containerColor = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.weight(1f))
-        }
-    }
-}
-
-@Composable
-private fun RankedSpotCard(
-    label: String, 
-    spot: RankedSpot?, 
-    annotations: List<SpatialAnnotation>,
-    containerColor: Color, 
-    modifier: Modifier = Modifier
-) {
-    val context = LocalContext.current
-    Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = containerColor)) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(text = label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(4.dp))
-            if (spot != null) {
-                Text(text = "Score: ${"%.1f".format(spot.score)}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                
-                val indoor = spot.indoorPosition
-                val loc = spot.location
-                
-                if (indoor != null) {
-                    val nearestPin = annotations.minByOrNull { pin ->
-                        sqrt((pin.x - indoor.x).pow(2) + (pin.y - indoor.y).pow(2))
-                    }
-                    val distanceToPin = nearestPin?.let { pin ->
-                        sqrt((pin.x - indoor.x).pow(2) + (pin.y - indoor.y).pow(2))
-                    }
-                    
-                    if (distanceToPin != null && distanceToPin < 1.5) {
-                        Text(
-                            text = "Near: ${nearestPin.label ?: "Unnamed Marker"}",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "(${indoor.x.toInt()}m, ${indoor.y.toInt()}m)",
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    } else {
-                        Text(
-                            text = "Indoor (${indoor.x.toInt()}m, ${indoor.y.toInt()}m)",
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
-                } else if (loc != null) {
-                    Text(
-                        text = "${"%.5f".format(loc.lat)}, ${"%.5f".format(loc.long)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        textDecoration = TextDecoration.Underline,
-                        modifier = Modifier.clickable {
-                            val uri = "geo:${loc.lat},${loc.long}?q=${loc.lat},${loc.long}"
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri))
-                            context.startActivity(intent)
-                        }
-                    )
-                } else {
-                    Text(text = "Unknown Position", style = MaterialTheme.typography.labelSmall)
-                }
-            } else {
-                Text(text = "Insufficient Data", style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-    }
-}
-
-@Composable
-private fun InfoItem(label: String, value: String) {
-    Column(modifier = Modifier.padding(vertical = 4.dp)) {
-        Text(text = label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(text = value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-    }
-}
-
-@Composable
-private fun PermissionRationaleDialog(
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Location Access Required") },
-        text = {
-            Text("Network Radar needs location access to measure Wi-Fi and GPS signal quality at your position. This is required by Android to perform network scans.")
-        },
-        confirmButton = {
-            Button(onClick = onConfirm) {
-                Text("Allow Access")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Later")
-            }
-        }
-    )
-}
-
-@Composable
-private fun PermissionDeniedBanner(
-    onRequestPermission: () -> Unit
-) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "Location Permission Required",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onErrorContainer
-            )
-            Text(
-                text = "To measure signal quality, please grant location access.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Button(
-                onClick = onRequestPermission,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-            ) {
-                Text("Grant Permission")
             }
         }
     }

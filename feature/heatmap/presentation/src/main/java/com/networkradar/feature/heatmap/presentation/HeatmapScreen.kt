@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.networkradar.feature.heatmap.domain.HeatmapMetric
 import com.networkradar.feature.heatmap.presentation.components.HeatmapCanvas
+import com.networkradar.feature.heatmap.presentation.components.SimpleTrailView
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
@@ -46,7 +47,7 @@ fun HeatmapScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Spatial Signal Map") },
+                title = { Text("Spatial Signal Map", fontWeight = FontWeight.Bold) },
                 actions = {
                     IconButton(onClick = { onAction(HeatmapAction.Refresh) }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
@@ -60,6 +61,31 @@ fun HeatmapScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            // View Mode Toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                SingleChoiceSegmentedButtonRow {
+                    SegmentedButton(
+                        selected = state.viewMode == HeatmapViewMode.SIMPLE,
+                        onClick = { onAction(HeatmapAction.SetViewMode(HeatmapViewMode.SIMPLE)) },
+                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                    ) {
+                        Text("Simple View")
+                    }
+                    SegmentedButton(
+                        selected = state.viewMode == HeatmapViewMode.DETAILED,
+                        onClick = { onAction(HeatmapAction.SetViewMode(HeatmapViewMode.DETAILED)) },
+                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                    ) {
+                        Text("Detailed Grid")
+                    }
+                }
+            }
+
             // Metric Selector
             ScrollableTabRow(
                 selectedTabIndex = state.selectedMetric.ordinal,
@@ -97,14 +123,23 @@ fun HeatmapScreen(
                             icon = Icons.Default.Info
                         )
                     }
-                    state.heatmapCells.isNotEmpty() || state.sourcePoints.isNotEmpty() -> {
-                        HeatmapCanvas(
-                            cells = state.heatmapCells,
-                            sourcePoints = state.sourcePoints,
-                            annotations = state.annotations,
-                            metric = state.selectedMetric,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                    state.sourcePoints.isNotEmpty() -> {
+                        if (state.viewMode == HeatmapViewMode.SIMPLE) {
+                            SimpleTrailView(
+                                sourcePoints = state.sourcePoints,
+                                annotations = state.annotations,
+                                metric = state.selectedMetric,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            HeatmapCanvas(
+                                cells = state.heatmapCells,
+                                sourcePoints = state.sourcePoints,
+                                annotations = state.annotations,
+                                metric = state.selectedMetric,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
                     else -> {
                         HeatmapEmptyState(
@@ -116,11 +151,22 @@ fun HeatmapScreen(
                 }
             }
 
-            // Legend & Info
-            HeatmapLegend(
-                metric = state.selectedMetric,
-                range = state.metricRange
-            )
+            // Legend & Info (Only show for Detailed view as Simple view has its own minimal legend)
+            if (state.viewMode == HeatmapViewMode.DETAILED) {
+                HeatmapLegend(
+                    metric = state.selectedMetric,
+                    range = state.metricRange
+                )
+            } else {
+                // Info text for Simple View
+                Text(
+                    text = "Tap any dot or pin to see plain-language signal quality.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                    textAlign = TextAlign.Center
+                )
+            }
         }
     }
 }

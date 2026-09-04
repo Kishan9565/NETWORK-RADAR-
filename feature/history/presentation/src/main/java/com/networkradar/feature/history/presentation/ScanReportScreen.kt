@@ -4,9 +4,11 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
@@ -22,11 +24,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.networkradar.core.designsystem.SignalExcellent
-import com.networkradar.core.designsystem.SignalFair
-import com.networkradar.core.designsystem.SignalGood
-import com.networkradar.core.designsystem.SignalPoor
-import com.networkradar.core.designsystem.SignalUnavailable
+import com.networkradar.core.designsystem.*
 import com.networkradar.core.domain.indoor.SpatialAnnotation
 import com.networkradar.core.domain.measurement.NetworkMetric
 import com.networkradar.core.domain.measurement.RankedSpot
@@ -51,13 +49,12 @@ fun ScanReportRoot(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val snackbarHostState = remember { SnackbarHostState() }
 
     ObserveAsEvents(viewModel.events) { event ->
         when (event) {
             is ScanReportEvent.ExportReady -> {
-                shareFile(context, event.uri, event.filename) { errorMessage ->
-                    viewModel.onAction(ScanReportAction.LoadReport) // Refresh or just notify
+                shareFile(context, event.uri, event.filename) { _ ->
+                    viewModel.onAction(ScanReportAction.LoadReport)
                 }
             }
             is ScanReportEvent.Error -> {
@@ -83,10 +80,10 @@ fun ScanReportScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Scan Report", fontWeight = FontWeight.Bold) },
+                title = { Text("Scan Report", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
                 actions = {
                     IconButton(onClick = { onAction(ScanReportAction.ExportCsv) }) {
-                        Icon(imageVector = Icons.Default.Share, contentDescription = "Export CSV")
+                        Icon(imageVector = Icons.Default.Share, contentDescription = "Export CSV", tint = ElectricCyan)
                     }
                 }
             )
@@ -99,58 +96,66 @@ fun ScanReportScreen(
                 .padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            if (state.isLoading) {
-                Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+            when {
+                state.isLoading -> {
+                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = ElectricCyan)
+                    }
                 }
-            } else if (state.summary != null) {
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                state.scan?.let { scan ->
-                    Text(
-                        text = scan.name.ifBlank { "Unnamed Scan" },
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    val dateFormat = SimpleDateFormat("EEEE, MMMM dd, yyyy • h:mm a", Locale.getDefault())
-                    Text(
-                        text = dateFormat.format(Date(scan.startedAt)),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(24.dp))
-                }
+                state.summary != null -> {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    state.scan?.let { scan ->
+                        Text(
+                            text = scan.name.ifBlank { "Unnamed Scan" },
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        val dateFormat = SimpleDateFormat("EEEE, MMMM dd, yyyy • h:mm a", Locale.getDefault())
+                        Text(
+                            text = dateFormat.format(Date(scan.startedAt)),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(24.dp))
+                    }
 
-                IntelligenceSummaryContent(
-                    summary = state.summary,
-                    annotations = state.annotations,
-                    onViewHeatmap = onViewHeatmap
-                )
-                
-                Spacer(modifier = Modifier.height(32.dp))
-                
-                Text(text = "EXPORT DATA", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(
-                        onClick = { onAction(ScanReportAction.ExportCsv) },
-                        modifier = Modifier.weight(1f),
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        Text("Export CSV")
+                    IntelligenceSummaryContent(
+                        summary = state.summary,
+                        annotations = state.annotations,
+                        isSpatial = state.scan?.isSpatial ?: false,
+                        scanStartTime = state.scan?.startedAt ?: 0L,
+                        onViewHeatmap = onViewHeatmap
+                    )
+                    
+                    Spacer(modifier = Modifier.height(32.dp))
+                    
+                    Text(text = "EXPORT DATA", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(
+                            onClick = { onAction(ScanReportAction.ExportCsv) },
+                            modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.medium,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            Text("Export CSV")
+                        }
+                        Button(
+                            onClick = { onAction(ScanReportAction.ExportJson) },
+                            modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.medium,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            Text("Export JSON")
+                        }
                     }
-                    OutlinedButton(
-                        onClick = { onAction(ScanReportAction.ExportJson) },
-                        modifier = Modifier.weight(1f),
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        Text("Export JSON")
-                    }
+                    Spacer(modifier = Modifier.height(32.dp))
                 }
-                Spacer(modifier = Modifier.height(32.dp))
-            } else {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(text = state.error ?: "Report unavailable", style = MaterialTheme.typography.bodyLarge)
+                else -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(text = state.error ?: "Report unavailable", style = MaterialTheme.typography.bodyLarge)
+                    }
                 }
             }
         }
@@ -161,6 +166,8 @@ fun ScanReportScreen(
 private fun IntelligenceSummaryContent(
     summary: ScanIntelligenceSummary,
     annotations: List<SpatialAnnotation>,
+    isSpatial: Boolean,
+    scanStartTime: Long,
     onViewHeatmap: () -> Unit
 ) {
     Column {
@@ -169,23 +176,29 @@ private fun IntelligenceSummaryContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(text = "SCAN INTELLIGENCE", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Button(onClick = onViewHeatmap) {
-                Text("View Heatmap")
+            Text(text = "SCAN INTELLIGENCE", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+            Button(
+                onClick = onViewHeatmap,
+                colors = ButtonDefaults.buttonColors(containerColor = ElectricCyan, contentColor = Color.Black)
+            ) {
+                Text("View Heatmap", fontWeight = FontWeight.Bold)
             }
         }
         Spacer(modifier = Modifier.height(12.dp))
 
-        Card(modifier = Modifier.fillMaxWidth()) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+        ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     InfoItem("Data Coverage", summary.dataSufficiency.name)
                     InfoItem("Confidence", "${(summary.overallConfidence * 100).toInt()}%")
                 }
                 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(20.dp))
                 
-                Text(text = "METRIC AVERAGES", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                Text(text = "METRIC AVERAGES", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(8.dp))
 
                 if (summary.statistics.isNotEmpty()) {
@@ -206,8 +219,24 @@ private fun IntelligenceSummaryContent(
 
         Spacer(modifier = Modifier.height(16.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            RankedSpotCard("BEST SPOT", summary.bestSpot, annotations, MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.weight(1f))
-            RankedSpotCard("WEAKEST SPOT", summary.worstSpot, annotations, MaterialTheme.colorScheme.errorContainer, modifier = Modifier.weight(1f))
+            RankedSpotCard(
+                label = if (isSpatial) "BEST SPOT" else "BEST MOMENT",
+                spot = summary.bestSpot,
+                annotations = annotations,
+                isSpatial = isSpatial,
+                scanStartTime = scanStartTime,
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.weight(1f)
+            )
+            RankedSpotCard(
+                label = if (isSpatial) "WEAKEST SPOT" else "WEAKEST MOMENT",
+                spot = summary.worstSpot,
+                annotations = annotations,
+                isSpatial = isSpatial,
+                scanStartTime = scanStartTime,
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+                modifier = Modifier.weight(1f)
+            )
         }
     }
 }
@@ -215,13 +244,15 @@ private fun IntelligenceSummaryContent(
 @Composable
 private fun MetricAverageRow(label: String, value: String, quality: SignalQuality) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(text = label, style = MaterialTheme.typography.bodyMedium)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(text = value, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+            Text(text = value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
             Spacer(modifier = Modifier.width(8.dp))
             SignalBadgeTiny(quality)
         }
@@ -235,13 +266,13 @@ private fun SignalBadgeTiny(quality: SignalQuality) {
         SignalQuality.GOOD -> SignalGood
         SignalQuality.FAIR -> SignalFair
         SignalQuality.POOR -> SignalPoor
-        SignalQuality.UNAVAILABLE -> SignalUnavailable
+        else -> SignalUnavailable
     }
-    Surface(
-        color = color,
-        shape = MaterialTheme.shapes.extraSmall,
-        modifier = Modifier.size(8.dp)
-    ) {}
+    Box(
+        modifier = Modifier
+            .size(10.dp)
+            .background(color, CircleShape)
+    )
 }
 
 @Composable
@@ -249,57 +280,75 @@ private fun RankedSpotCard(
     label: String, 
     spot: RankedSpot?, 
     annotations: List<SpatialAnnotation>,
+    isSpatial: Boolean,
+    scanStartTime: Long,
     containerColor: Color, 
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = containerColor)) {
+    Card(
+        modifier = modifier, 
+        colors = CardDefaults.cardColors(containerColor = containerColor.copy(alpha = 0.2f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, containerColor.copy(alpha = 0.5f))
+    ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Text(text = label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(4.dp))
+            Text(text = label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold, color = containerColor)
+            Spacer(modifier = Modifier.height(8.dp))
             if (spot != null) {
-                Text(text = "Score: ${"%.1f".format(spot.score)}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                Text(text = "Score: ${"%.1f".format(spot.score)}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
                 
-                val indoor = spot.indoorPosition
-                val loc = spot.location
+                Spacer(modifier = Modifier.height(4.dp))
                 
-                if (indoor != null) {
-                    val nearestPin = annotations.minByOrNull { pin ->
-                        sqrt((pin.x - indoor.x).pow(2) + (pin.y - indoor.y).pow(2))
-                    }
-                    val distanceToPin = nearestPin?.let { pin ->
-                        sqrt((pin.x - indoor.x).pow(2) + (pin.y - indoor.y).pow(2))
-                    }
+                if (isSpatial) {
+                    val indoor = spot.indoorPosition
+                    val loc = spot.location
                     
-                    if (distanceToPin != null && distanceToPin < 1.5) {
+                    if (indoor != null) {
+                        val nearestPin = annotations.minByOrNull { pin ->
+                            sqrt((pin.x - indoor.x).pow(2) + (pin.y - indoor.y).pow(2))
+                        }
+                        val distanceToPin = nearestPin?.let { pin ->
+                            sqrt((pin.x - indoor.x).pow(2) + (pin.y - indoor.y).pow(2))
+                        }
+                        
+                        if (distanceToPin != null && distanceToPin < 1.5) {
+                            Text(
+                                text = "Near: ${nearestPin.label ?: "Marker"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                         Text(
-                            text = "Near: ${nearestPin.label ?: "Unnamed Marker"}",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Bold
+                            text = "POS: ${indoor.x.toInt()}m, ${indoor.y.toInt()}m",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    } else if (loc != null) {
                         Text(
-                            text = "(${indoor.x.toInt()}m, ${indoor.y.toInt()}m)",
-                            style = MaterialTheme.typography.labelSmall
+                            text = "GPS Coordinates",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textDecoration = TextDecoration.Underline,
+                            modifier = Modifier.clickable {
+                                val uri = "geo:${loc.lat},${loc.long}?q=${loc.lat},${loc.long}"
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri))
+                                context.startActivity(intent)
+                            }
                         )
                     } else {
-                        Text(
-                            text = "Indoor (${indoor.x.toInt()}m, ${indoor.y.toInt()}m)",
-                            style = MaterialTheme.typography.labelSmall
-                        )
+                        Text(text = "Unknown Position", style = MaterialTheme.typography.labelSmall)
                     }
-                } else if (loc != null) {
-                    Text(
-                        text = "${"%.5f".format(loc.lat)}, ${"%.5f".format(loc.long)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        textDecoration = TextDecoration.Underline,
-                        modifier = Modifier.clickable {
-                            val uri = "geo:${loc.lat},${loc.long}?q=${loc.lat},${loc.long}"
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri))
-                            context.startActivity(intent)
-                        }
-                    )
                 } else {
-                    Text(text = "Unknown Position", style = MaterialTheme.typography.labelSmall)
+                    // Quick Scan - Time-based reference
+                    val relativeTimeMs = spot.timestamp - scanStartTime
+                    val minutes = (relativeTimeMs / 1000) / 60
+                    val seconds = (relativeTimeMs / 1000) % 60
+                    Text(
+                        text = if (minutes > 0) "${minutes}m ${seconds}s into scan" else "${seconds}s into scan",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             } else {
                 Text(text = "Insufficient Data", style = MaterialTheme.typography.bodyMedium)
@@ -312,7 +361,7 @@ private fun RankedSpotCard(
 private fun InfoItem(label: String, value: String) {
     Column(modifier = Modifier.padding(vertical = 4.dp)) {
         Text(text = label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(text = value, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+        Text(text = value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
     }
 }
 

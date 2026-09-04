@@ -8,17 +8,22 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.CompareArrows
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.networkradar.core.designsystem.ElectricCyan
 import com.networkradar.core.designsystem.SignalExcellent
+import com.networkradar.core.designsystem.SignalFair
 import com.networkradar.core.designsystem.SignalGood
 import com.networkradar.core.designsystem.SignalPoor
+import com.networkradar.core.designsystem.SignalUnavailable
 import com.networkradar.core.domain.measurement.*
 import com.networkradar.core.presentation.util.ObserveAsEvents
 import org.koin.androidx.compose.koinViewModel
@@ -33,7 +38,7 @@ fun ComparisonRoot(
 
     ObserveAsEvents(viewModel.events) { event ->
         when (event) {
-            is ComparisonEvent.Error -> { /* Handle error */ }
+            is ComparisonEvent.Error -> { /* Handle error via snackbar if needed */ }
         }
     }
 
@@ -51,7 +56,7 @@ fun ComparisonScreen(
 ) {
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Scan Comparison", fontWeight = FontWeight.Bold) })
+            TopAppBar(title = { Text("Scan Comparison", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) })
         }
     ) { padding ->
         Column(
@@ -60,45 +65,56 @@ fun ComparisonScreen(
                 .padding(padding)
                 .padding(horizontal = 16.dp)
         ) {
-            if (state.comparison == null) {
-                Text(
-                    text = "SELECT TWO SCANS",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(vertical = 12.dp)
-                )
-                
-                ScanSelector(
-                    scans = state.scans,
-                    selectedIdA = state.selectedIdA,
-                    selectedIdB = state.selectedIdB,
-                    onSelectA = { onAction(ComparisonAction.SelectScanA(it)) },
-                    onSelectB = { onAction(ComparisonAction.SelectScanB(it)) },
-                    modifier = Modifier.weight(1f)
-                )
-                
-                Spacer(modifier = Modifier.height(24.dp))
-                
-                Button(
-                    onClick = { onAction(ComparisonAction.Compare) },
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    enabled = state.selectedIdA != null && state.selectedIdB != null && state.selectedIdA != state.selectedIdB && !state.isLoading,
-                    shape = MaterialTheme.shapes.large
-                ) {
-                    if (state.isLoading) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
-                    } else {
-                        Icon(Icons.Default.CompareArrows, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("COMPARE SELECTED", fontWeight = FontWeight.Bold)
+            when {
+                state.isLoading && state.scans.isEmpty() -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = ElectricCyan)
                     }
                 }
-                Spacer(modifier = Modifier.height(24.dp))
-            } else {
-                ComparisonResults(
-                    comparison = state.comparison,
-                    onReset = { /* Implementation to reset could be added to VM action */ }
-                )
+                state.comparison == null -> {
+                    Text(
+                        text = "SELECT TWO SCANS TO COMPARE",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(vertical = 16.dp)
+                    )
+                    
+                    ScanSelector(
+                        scans = state.scans,
+                        selectedIdA = state.selectedIdA,
+                        selectedIdB = state.selectedIdB,
+                        onSelectA = { onAction(ComparisonAction.SelectScanA(it)) },
+                        onSelectB = { onAction(ComparisonAction.SelectScanB(it)) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    Button(
+                        onClick = { onAction(ComparisonAction.Compare) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        enabled = state.selectedIdA != null && state.selectedIdB != null && state.selectedIdA != state.selectedIdB && !state.isLoading,
+                        shape = MaterialTheme.shapes.large,
+                        colors = ButtonDefaults.buttonColors(containerColor = ElectricCyan, contentColor = Color.Black)
+                    ) {
+                        if (state.isLoading) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.Black)
+                        } else {
+                            Icon(Icons.Default.CompareArrows, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("COMPARE SELECTED", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+                else -> {
+                    ComparisonResults(
+                        comparison = state.comparison,
+                        onReset = { /* Could add a back/reset button if state allowed */ }
+                    )
+                }
             }
         }
     }
@@ -116,9 +132,12 @@ private fun ScanSelector(
     val dateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
 
     Column(modifier = modifier) {
-        Card(modifier = Modifier.weight(1f)) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text("Primary Scan", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        Card(
+            modifier = Modifier.weight(1f),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Primary Scan", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(8.dp))
                 ScanList(scans, selectedIdA, onSelectA, dateFormat)
             }
@@ -126,9 +145,12 @@ private fun ScanSelector(
         
         Spacer(modifier = Modifier.height(16.dp))
         
-        Card(modifier = Modifier.weight(1f)) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text("Comparison Scan", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        Card(
+            modifier = Modifier.weight(1f),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Comparison Scan", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(8.dp))
                 ScanList(scans, selectedIdB, onSelectB, dateFormat)
             }
@@ -145,7 +167,11 @@ private fun ScanList(
 ) {
     if (scans.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("No scans available", style = MaterialTheme.typography.bodySmall)
+            Text(
+                text = "No recorded scans found.", 
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     } else {
         LazyColumn(
@@ -159,11 +185,15 @@ private fun ScanList(
                     label = { 
                         Text(
                             text = "${scan.name.ifBlank { "Scan" }} (${dateFormat.format(Date(scan.startedAt))})",
-                            style = MaterialTheme.typography.labelMedium
+                            style = MaterialTheme.typography.labelSmall
                         ) 
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.medium
+                    shape = MaterialTheme.shapes.medium,
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = ElectricCyan.copy(alpha = 0.2f),
+                        selectedLabelColor = ElectricCyan
+                    )
                 )
             }
         }
@@ -181,7 +211,7 @@ private fun ComparisonResults(comparison: ScanComparison, onReset: () -> Unit) {
         )
         Text(
             text = "${comparison.scanA.name} vs ${comparison.scanB.name}",
-            style = MaterialTheme.typography.headlineSmall,
+            style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold
         )
         
@@ -205,7 +235,10 @@ private fun MetricComparisonCard(metric: NetworkMetric, comp: com.networkradar.c
         else -> ""
     }
 
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = metric.name.replace("_", " "),
@@ -213,7 +246,7 @@ private fun MetricComparisonCard(metric: NetworkMetric, comp: com.networkradar.c
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -221,8 +254,8 @@ private fun MetricComparisonCard(metric: NetworkMetric, comp: com.networkradar.c
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text(text = "${"%.1f".format(comp.valueA)}$unit", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text(text = "Previous", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(text = "PREVIOUS", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(text = "${"%.1f".format(comp.valueA)}$unit", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
                 }
                 Icon(
                     imageVector = Icons.Default.ArrowForward,
@@ -230,12 +263,12 @@ private fun MetricComparisonCard(metric: NetworkMetric, comp: com.networkradar.c
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                 )
                 Column(horizontalAlignment = Alignment.End) {
-                    Text(text = "${"%.1f".format(comp.valueB)}$unit", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text(text = "Current", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(text = "CURRENT", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(text = "${"%.1f".format(comp.valueB)}$unit", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
                 }
             }
             
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(20.dp))
             
             val trendColor = when(comp.trend) {
                 ComparisonTrend.IMPROVED -> SignalExcellent
@@ -249,25 +282,25 @@ private fun MetricComparisonCard(metric: NetworkMetric, comp: com.networkradar.c
                 shape = MaterialTheme.shapes.small
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = "${if (comp.difference > 0) "+" else ""}${"%.1f".format(comp.difference)}$unit",
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold
                     )
                     comp.percentageChange?.let {
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "(${"%.1f".format(it)}%)",
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodyMedium
                         )
                     }
                     Spacer(modifier = Modifier.weight(1f))
                     Text(
                         text = comp.trend.name,
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.ExtraBold
                     )
                 }

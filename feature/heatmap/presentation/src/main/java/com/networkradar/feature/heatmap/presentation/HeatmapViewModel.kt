@@ -38,6 +38,9 @@ class HeatmapViewModel(
                 _state.update { it.copy(selectedSessionId = action.sessionId) }
                 loadSession(action.sessionId)
             }
+            is HeatmapAction.SetViewMode -> {
+                _state.update { it.copy(viewMode = action.mode) }
+            }
             HeatmapAction.Refresh -> {
                 generateHeatmap()
             }
